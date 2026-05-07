@@ -1,0 +1,280 @@
+/* ── Game Page ────────────────────────────────────────────────────────────── */
+
+.game-page {
+  min-height: 100vh;
+  background: var(--color-bg, #0a0e1a);
+  color: var(--color-text, #e2e8f0);
+  display: flex;
+  flex-direction: column;
+  font-family: 'Inter', sans-serif;
+}
+
+.game-page--loading,
+.game-page--auth,
+.game-page--error {
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+/* ── Header ── */
+.game-page__header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+}
+
+.game-page__title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.game-page__title h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+  color: #e2e8f0;
+}
+
+.btn-back {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #94a3b8;
+  padding: 0.4rem 0.875rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 150ms ease;
+  white-space: nowrap;
+}
+.btn-back:hover {
+  background: rgba(255,255,255,0.1);
+  color: #e2e8f0;
+}
+
+.bet-badge {
+  background: rgba(234,179,8,0.12);
+  border: 1px solid rgba(234,179,8,0.3);
+  color: #fbbf24;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ── Banner ── */
+.game-page__banner {
+  padding: 0.75rem 1.5rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  text-align: center;
+  animation: slideDown 0.25s ease;
+}
+@keyframes slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+.banner--info  { background: rgba(59,130,246,0.15);  color: #93c5fd; }
+.banner--error { background: rgba(239,68,68,0.15);   color: #fca5a5; }
+.banner--win   { background: rgba(16,185,129,0.15);  color: #6ee7b7; }
+
+/* ── Waiting ── */
+.game-page__waiting {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+.waiting-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  padding: 3rem 2.5rem;
+  text-align: center;
+  max-width: 420px;
+  width: 100%;
+}
+.waiting-icon {
+  font-size: 3.5rem;
+  margin-bottom: 1rem;
+  animation: bob 2s ease-in-out infinite;
+}
+@keyframes bob {
+  0%,100% { transform: translateY(0); }
+  50%     { transform: translateY(-8px); }
+}
+.waiting-card h2 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+.waiting-card p  { color: #94a3b8; margin-bottom: 1.5rem; }
+.waiting-id {
+  font-size: 2.5rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #38bdf8;
+  margin-bottom: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Placement ── */
+.game-page__placement {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem;
+  gap: 1rem;
+}
+.phase-title {
+  font-size: 1.375rem;
+  font-weight: 700;
+  margin: 0;
+}
+.phase-subtitle {
+  color: #94a3b8;
+  font-size: 0.9375rem;
+  text-align: center;
+  max-width: 480px;
+  margin: 0;
+}
+.placement-actions {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-top: 0.5rem;
+}
+.placement-count {
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+/* ── Battle ── */
+.game-page__battle {
+  flex: 1;
+  padding: 1.5rem;
+  position: relative;
+}
+
+.battle-layout {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.board-section {}
+.board-label {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.turn-indicator {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.625rem;
+  border-radius: 9999px;
+  font-weight: 500;
+}
+.turn-indicator--active  { background: rgba(16,185,129,0.15); color: #34d399; animation: pulse 1.5s ease infinite; }
+.turn-indicator--waiting { background: rgba(148,163,184,0.1);  color: #64748b; }
+@keyframes pulse {
+  0%,100% { opacity: 1; }
+  50%     { opacity: 0.5; }
+}
+
+/* ── Result overlay ── */
+.game-page__result {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.result-card {
+  background: #0f172a;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 20px;
+  padding: 3rem 2.5rem;
+  text-align: center;
+  max-width: 380px;
+  width: 90%;
+  animation: scaleIn 0.3s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes scaleIn {
+  from { transform: scale(0.85); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+.result-icon { font-size: 4rem; margin-bottom: 1rem; }
+.result-card h2 { font-size: 2rem; margin-bottom: 0.5rem; }
+.result-card p  { color: #94a3b8; margin-bottom: 1.5rem; }
+.tournament-note {
+  font-size: 0.8125rem;
+  color: #38bdf8 !important;
+  margin-bottom: 0.5rem !important;
+}
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.5rem;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+.btn--primary {
+  background: #3b82f6;
+  color: #fff;
+}
+.btn--primary:hover:not(:disabled) { background: #2563eb; transform: translateY(-1px); }
+.btn--primary:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn--danger  { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+.btn--danger:hover { background: rgba(239,68,68,0.25); }
+
+/* ── Loading spinner ── */
+.loading-spinner {
+  width: 48px; height: 48px;
+  border: 3px solid rgba(255,255,255,0.1);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .battle-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+  }
+  .board-section--opponent { order: -1; }
+}
+@media (max-width: 480px) {
+  .game-page__header { padding: 0.75rem 1rem; }
+  .waiting-card      { padding: 2rem 1.25rem; }
+  .placement-actions { flex-direction: column; }
+}

@@ -1,0 +1,87 @@
+.game-status {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: center;
+  padding: 0 0.5rem;
+  min-width: 140px;
+}
+
+.gs-turn {
+  font-size: 0.875rem;
+  font-weight: 700;
+  padding: 0.4rem 1rem;
+  border-radius: 9999px;
+  text-align: center;
+  white-space: nowrap;
+}
+.gs-turn--mine   { background: rgba(16,185,129,0.15); color: #34d399; }
+.gs-turn--theirs { background: rgba(148,163,184,0.1);  color: #64748b; }
+
+.gs-score {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.gs-score__block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+.gs-score__value {
+  font-size: 2rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #38bdf8;
+}
+.gs-score__label {
+  font-size: 0.6875rem;
+  color: #475569;
+  text-align: center;
+}
+.gs-score__divider {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.gs-ships { width: 100%; }
+.gs-ships__section h4 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #475569;
+  margin-bottom: 0.5rem;
+}
+.gs-ship-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.8125rem;
+}
+.gs-ship-name { color: #94a3b8; flex: 1; }
+.gs-ship-dots { display: flex; gap: 3px; }
+.gs-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+.gs-dot--alive { background: #34d399; }
+.gs-dot--hit   { background: #f87171; }
+.gs-dot--sunk  { background: #374151; }
+
+.gs-bet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #fbbf24;
+}
+.gs-bet__label {
+  font-size: 0.6875rem;
+  color: #475569;
+  font-weight: 400;
+}
