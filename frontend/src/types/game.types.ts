@@ -24,12 +24,13 @@ export interface BoardCell {
   shipIndex?: number;
 }
 
+/** Canonical view model used across hooks and components. */
 export interface GameStateView {
   creator: string;
   opponent?: string;
   bet: string;
   phase: GamePhase;
-  currentTurn: number;
+  currentTurn: number;   // 0 = creator, 1 = opponent
   winner?: string;
   tournamentId?: number;
   tournamentMatchId?: number;

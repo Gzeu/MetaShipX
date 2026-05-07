@@ -7,10 +7,10 @@ interface Props {
 }
 
 export const TournamentBadge: React.FC<Props> = ({ tournamentId, matchId }) => (
-  <div className="tournament-badge">
-    <span className="tournament-badge__icon">🏆</span>
-    <span>Turneu #{tournamentId}</span>
-    <span className="tournament-badge__sep">·</span>
-    <span>Meci #{matchId}</span>
-  </div>
+  <span className="tournament-badge" title={`Tournament #${tournamentId} — Match #${matchId}`}>
+    🏆 Tournament #{tournamentId}
+    <span className="tournament-badge__match">Match {matchId}</span>
+  </span>
 );
+
+export default TournamentBadge;

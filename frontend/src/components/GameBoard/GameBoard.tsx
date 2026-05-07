@@ -1,18 +1,19 @@
 import React, { useCallback } from 'react';
+import type { CellState } from '../../types/game.types';
 import './GameBoard.css';
 
-export type CellState = 'empty' | 'ship' | 'hit' | 'miss' | 'sunk';
-
 interface GameBoardProps {
-  /** 10x10 grid of cell states */
-  board: CellState[][];
-  /** Whether this board is interactive (opponent's board during attack phase) */
-  interactive?: boolean;
-  /** Called when user clicks a cell to attack */
-  onCellClick?: (row: number, col: number) => void;
-  /** Disable all clicks (e.g. not your turn) */
+  /** 10×10 flat grid of cell states — row-major order */
+  cells: CellState[][];
+  /** Whether this board accepts click-to-attack */
+  isInteractive?: boolean;
+  /** Hide ships (opponent board) */
+  showShips?: boolean;
+  /** Disable all clicks (e.g. not your turn, waiting) */
   disabled?: boolean;
-  /** Label above the board */
+  /** Called with (row, col) on valid attack click */
+  onCellClick?: (row: number, col: number) => void;
+  /** Optional label rendered above the board */
   label?: string;
 }
 
@@ -20,21 +21,26 @@ const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 const ROWS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 export const GameBoard: React.FC<GameBoardProps> = ({
-  board,
-  interactive = false,
-  onCellClick,
+  cells,
+  isInteractive = false,
+  showShips = true,
   disabled = false,
+  onCellClick,
   label,
 }) => {
+  // Ensure board is always 10×10 even if data is missing
+  const board: CellState[][] = Array.from({ length: 10 }, (_, r) =>
+    Array.from({ length: 10 }, (_, c) => cells?.[r]?.[c] ?? 'empty')
+  );
+
   const handleClick = useCallback(
     (row: number, col: number) => {
-      if (!interactive || disabled) return;
+      if (!isInteractive || disabled) return;
       const cell = board[row][col];
-      // Can't attack already-attacked cells
       if (cell === 'hit' || cell === 'miss' || cell === 'sunk') return;
       onCellClick?.(row, col);
     },
-    [board, interactive, disabled, onCellClick]
+    [board, isInteractive, disabled, onCellClick]
   );
 
   return (
@@ -49,27 +55,34 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           ))}
         </div>
 
-        {/* Grid rows */}
+        {/* Rows */}
         {board.map((row, rowIdx) => (
           <div key={rowIdx} className="gameboard-row">
             <div className="gameboard-header gameboard-row-header">{ROWS[rowIdx]}</div>
-            {row.map((cell, colIdx) => (
-              <button
-                key={colIdx}
-                className={`gameboard-cell gameboard-cell--${cell}${
-                  interactive && cell === 'empty' && !disabled
-                    ? ' gameboard-cell--targetable'
-                    : ''
-                }`}
-                onClick={() => handleClick(rowIdx, colIdx)}
-                disabled={!interactive || disabled || cell === 'hit' || cell === 'miss' || cell === 'sunk'}
-                aria-label={`${COLS[colIdx]}${ROWS[rowIdx]}: ${cell}`}
-              >
-                {cell === 'hit' && <span aria-hidden>💥</span>}
-                {cell === 'miss' && <span aria-hidden>•</span>}
-                {cell === 'sunk' && <span aria-hidden>💀</span>}
-              </button>
-            ))}
+            {row.map((cell, colIdx) => {
+              const displayCell = (!showShips && cell === 'ship') ? 'empty' : cell;
+              const isTargetable = isInteractive && !disabled &&
+                displayCell !== 'hit' && displayCell !== 'miss' && displayCell !== 'sunk';
+              return (
+                <button
+                  key={colIdx}
+                  className={[
+                    'gameboard-cell',
+                    `gameboard-cell--${displayCell}`,
+                    isTargetable ? 'gameboard-cell--targetable' : '',
+                  ].join(' ').trim()}
+                  onClick={() => handleClick(rowIdx, colIdx)}
+                  disabled={!isInteractive || disabled ||
+                    cell === 'hit' || cell === 'miss' || cell === 'sunk'}
+                  aria-label={`${COLS[colIdx]}${ROWS[rowIdx]}: ${displayCell}`}
+                >
+                  {displayCell === 'hit'  && <span aria-hidden>💥</span>}
+                  {displayCell === 'miss' && <span aria-hidden>•</span>}
+                  {displayCell === 'sunk' && <span aria-hidden>💀</span>}
+                  {displayCell === 'ship' && showShips && <span aria-hidden>🚢</span>}
+                </button>
+              );
+            })}
           </div>
         ))}
       </div>
