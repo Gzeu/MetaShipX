@@ -9,9 +9,9 @@ import GamePage from './pages/Game';
 import MarketplacePage from './pages/Marketplace';
 import StakingPage from './pages/Staking';
 import ProfilePage from './pages/Profile';
+import LeaderboardPage from './pages/Leaderboard';
 import NotFoundPage from './pages/NotFound';
 
-// Create a client for React Query
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -35,6 +35,7 @@ function App() {
                   <Route path="/marketplace" element={<MarketplacePage />} />
                   <Route path="/staking" element={<StakingPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/leaderboard" element={<LeaderboardPage />} />
                   <Route path="*" element={<NotFoundPage />} />
                 </Routes>
               </Layout>
