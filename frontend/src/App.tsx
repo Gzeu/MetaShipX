@@ -4,14 +4,22 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DappProvider } from './contexts/DappProvider';
 import { theme } from './styles/theme';
 import Layout from './components/Layout';
-import HomePage from './pages/Home';
-import GamePage from './pages/Game';
+
+// Pages
+import HomePage        from './pages/Home';
 import MarketplacePage from './pages/Marketplace';
-import StakingPage from './pages/Staking';
-import ProfilePage from './pages/Profile';
+import ProfilePage     from './pages/Profile';
 import LeaderboardPage from './pages/Leaderboard';
+import NotFoundPage    from './pages/NotFound';
+
+// New pages
+import LobbyPage       from './pages/LobbyPage/LobbyPage';
+import { GamePage }    from './pages/GamePage/GamePage';
+import TournamentPage  from './pages/TournamentPage/TournamentPage';
+import StakingPage     from './pages/StakingPage/StakingPage';
+
+// Tournament list (index page)
 import TournamentsPage from './pages/Tournaments';
-import NotFoundPage from './pages/NotFound';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,14 +36,25 @@ function App() {
             <Box minH="100vh" bg="gray.50">
               <Layout>
                 <Routes>
-                  <Route path="/"            element={<HomePage />} />
-                  <Route path="/game"        element={<GamePage />} />
-                  <Route path="/marketplace" element={<MarketplacePage />} />
-                  <Route path="/staking"     element={<StakingPage />} />
-                  <Route path="/profile"     element={<ProfilePage />} />
-                  <Route path="/leaderboard" element={<LeaderboardPage />} />
-                  <Route path="/tournaments" element={<TournamentsPage />} />
-                  <Route path="*"            element={<NotFoundPage />} />
+                  {/* Core */}
+                  <Route path="/"                  element={<HomePage />} />
+                  <Route path="/lobby"             element={<LobbyPage />} />
+                  <Route path="/game/:gameId"      element={<GamePage />} />
+
+                  {/* Tournaments */}
+                  <Route path="/tournaments"       element={<TournamentsPage />} />
+                  <Route path="/tournaments/:id"   element={<TournamentPage />} />
+
+                  {/* Staking */}
+                  <Route path="/staking"           element={<StakingPage />} />
+
+                  {/* Other */}
+                  <Route path="/marketplace"       element={<MarketplacePage />} />
+                  <Route path="/profile"           element={<ProfilePage />} />
+                  <Route path="/leaderboard"       element={<LeaderboardPage />} />
+
+                  {/* 404 */}
+                  <Route path="*"                  element={<NotFoundPage />} />
                 </Routes>
               </Layout>
             </Box>
