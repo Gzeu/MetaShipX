@@ -3,87 +3,132 @@ import {
   Menu, MenuButton, MenuList, MenuItem, MenuDivider,
   Avatar, Badge, Drawer, DrawerOverlay, DrawerContent, DrawerCloseButton,
   DrawerHeader, DrawerBody, VStack, useDisclosure,
-  useColorModeValue, Tooltip,
+  useColorModeValue, Divider,
 } from '@chakra-ui/react';
 import { HamburgerIcon, MoonIcon, SunIcon } from '@chakra-ui/icons';
 import { useGetIsLoggedIn, useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
-import { ExtensionLoginButton, WalletConnectLoginButton, LedgerLoginButton, WebWalletLoginButton } from '@multiversx/sdk-dapp/UI';
+import {
+  ExtensionLoginButton,
+  WalletConnectLoginButton,
+  LedgerLoginButton,
+  WebWalletLoginButton,
+} from '@multiversx/sdk-dapp/UI';
 import { logout as mxLogout } from '@multiversx/sdk-dapp/utils';
 import { useColorMode } from '@chakra-ui/react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useDapp } from '../../contexts/DappProvider';
 import { shortenAddress } from '../../utils/address';
 
-const NAV_LINKS = [
-  { label: '⚔️ Joacă',        href: '/game' },
+// ── Navigation structure ────────────────────────────────────────────────────
+const PRIMARY_NAV = [
+  { label: '🎮 Lobby',        href: '/lobby' },
   { label: '🏆 Turnee',       href: '/tournaments' },
   { label: '🏅 Leaderboard',  href: '/leaderboard' },
+];
+
+const SECONDARY_NAV = [
   { label: '⚓ Marketplace',  href: '/marketplace' },
   { label: '💎 Staking',      href: '/staking' },
   { label: '👤 Profil',       href: '/profile' },
 ];
 
+const ALL_NAV = [...PRIMARY_NAV, ...SECONDARY_NAV];
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+/** Active if pathname starts with href (handles /tournaments/:id etc.) */
+function isActiveRoute(pathname: string, href: string): boolean {
+  if (href === '/') return pathname === '/';
+  return pathname === href || pathname.startsWith(href + '/');
+}
+
+// ── Component ────────────────────────────────────────────────────────────────
 export default function Navbar() {
   const { colorMode, toggleColorMode } = useColorMode();
   const { isOpen: isDrawerOpen, onOpen: onDrawerOpen, onClose: onDrawerClose } = useDisclosure();
   const { isOpen: isWalletOpen, onOpen: onWalletOpen, onClose: onWalletClose } = useDisclosure();
   const isLoggedIn = useGetIsLoggedIn();
   const { address } = useGetAccountInfo();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const navigate  = useNavigate();
+  const { pathname } = useLocation();
 
-  const bg = useColorModeValue('rgba(255,255,255,0.9)', 'rgba(23,25,35,0.92)');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
+  const bg          = useColorModeValue('rgba(255,255,255,0.9)', 'rgba(13,16,28,0.95)');
+  const borderColor = useColorModeValue('gray.200', 'gray.800');
+  const menuBg      = useColorModeValue('white', 'gray.900');
 
-  const handleLogout = () => { mxLogout(); };
-  const isActive = (href: string) => location.pathname === href;
-
-  // Split nav: primary (always visible) vs overflow (hidden on small screens)
-  const PRIMARY_LINKS = NAV_LINKS.slice(0, 3);
-  const MORE_LINKS    = NAV_LINKS.slice(3);
+  const handleLogout = () => mxLogout();
 
   return (
     <>
+      {/* ── Sticky header ── */}
       <Box
         as="header"
         position="sticky" top={0} zIndex={100}
         borderBottom="1px" borderColor={borderColor}
         bg={bg}
-        backdropFilter="blur(12px)"
+        backdropFilter="blur(16px)"
         shadow="sm"
       >
-        <Flex maxW="container.xl" mx="auto" px={4} py={3} justify="space-between" align="center">
+        <Flex
+          maxW="container.xl" mx="auto"
+          px={{ base: 3, md: 6 }} py={3}
+          justify="space-between" align="center"
+        >
           {/* Logo */}
-          <HStack spacing={2} cursor="pointer" onClick={() => navigate('/')}>
-            <Text fontSize="2xl">⚓</Text>
-            <Text fontSize="xl" fontWeight={900} bgGradient="linear(to-r, blue.400, cyan.400)" bgClip="text">
+          <HStack
+            spacing={2} cursor="pointer"
+            onClick={() => navigate('/')}
+            _hover={{ opacity: 0.85 }}
+            transition="opacity 0.15s"
+            flexShrink={0}
+          >
+            <Text fontSize="2xl" lineHeight={1}>⚓</Text>
+            <Text
+              fontSize="xl" fontWeight={900}
+              bgGradient="linear(to-r, blue.400, cyan.300)"
+              bgClip="text"
+              letterSpacing="-0.5px"
+            >
               MetaShipX
             </Text>
           </HStack>
 
-          {/* Desktop nav — primary 3 links always, rest in "More" menu */}
-          <HStack spacing={1} display={{ base: 'none', md: 'flex' }}>
-            {PRIMARY_LINKS.map(link => (
-              <Button
-                key={link.href}
-                variant={isActive(link.href) ? 'solid' : 'ghost'}
-                colorScheme={isActive(link.href) ? 'blue' : 'gray'}
-                size="sm"
-                onClick={() => navigate(link.href)}
-              >
-                {link.label}
-              </Button>
-            ))}
-            {/* "More" dropdown for remaining links */}
+          {/* ── Desktop nav ── */}
+          <HStack spacing={1} display={{ base: 'none', lg: 'flex' }}>
+            {PRIMARY_NAV.map(link => {
+              const active = isActiveRoute(pathname, link.href);
+              return (
+                <Button
+                  key={link.href}
+                  variant={active ? 'solid' : 'ghost'}
+                  colorScheme={active ? 'blue' : 'gray'}
+                  size="sm"
+                  fontWeight={active ? 700 : 500}
+                  onClick={() => navigate(link.href)}
+                  _hover={active ? {} : { bg: useColorModeValue('gray.100', 'gray.800') }}
+                >
+                  {link.label}
+                </Button>
+              );
+            })}
+
+            {/* "Mai mult" dropdown */}
             <Menu>
-              <MenuButton as={Button} size="sm" variant="ghost" colorScheme="gray" rightIcon={<Text fontSize="xs">▾</Text>}>
-                Mai mult
+              <MenuButton
+                as={Button} size="sm" variant="ghost" colorScheme="gray"
+                fontWeight={SECONDARY_NAV.some(l => isActiveRoute(pathname, l.href)) ? 700 : 500}
+                color={SECONDARY_NAV.some(l => isActiveRoute(pathname, l.href)) ? 'blue.400' : undefined}
+              >
+                Mai mult ▾
               </MenuButton>
-              <MenuList bg={useColorModeValue('white', 'gray.800')} borderColor={borderColor} zIndex={200}>
-                {MORE_LINKS.map(link => (
-                  <MenuItem key={link.href} onClick={() => navigate(link.href)}
-                    fontWeight={isActive(link.href) ? 'bold' : 'normal'}
-                    color={isActive(link.href) ? 'blue.400' : undefined}
+              <MenuList bg={menuBg} borderColor={borderColor} zIndex={200} minW="180px">
+                {SECONDARY_NAV.map(link => (
+                  <MenuItem
+                    key={link.href}
+                    onClick={() => navigate(link.href)}
+                    fontWeight={isActiveRoute(pathname, link.href) ? 700 : 400}
+                    color={isActiveRoute(pathname, link.href) ? 'blue.400' : undefined}
+                    bg={isActiveRoute(pathname, link.href)
+                      ? useColorModeValue('blue.50', 'blue.900')
+                      : undefined}
                   >
                     {link.label}
                   </MenuItem>
@@ -92,8 +137,9 @@ export default function Navbar() {
             </Menu>
           </HStack>
 
-          {/* Right side */}
+          {/* ── Right controls ── */}
           <HStack spacing={2}>
+            {/* Theme toggle */}
             <IconButton
               aria-label="Toggle theme"
               icon={colorMode === 'dark' ? <SunIcon /> : <MoonIcon />}
@@ -102,95 +148,181 @@ export default function Navbar() {
               size="sm"
             />
 
+            {/* Wallet / account */}
             {isLoggedIn ? (
               <Menu>
                 <MenuButton
                   as={Button} size="sm" variant="outline" colorScheme="blue"
                   leftIcon={<Avatar size="xs" name={address} bg="blue.500" />}
                 >
-                  <Text display={{ base: 'none', sm: 'inline' }}>{shortenAddress(address)}</Text>
+                  <Text display={{ base: 'none', sm: 'inline' }}>
+                    {shortenAddress(address)}
+                  </Text>
                   <Text display={{ base: 'inline', sm: 'none' }}>Wallet</Text>
                 </MenuButton>
-                <MenuList bg={useColorModeValue('white', 'gray.800')} borderColor={borderColor}>
-                  <Box px={4} py={2}>
-                    <Text fontSize="xs" color="gray.500">Adresă</Text>
-                    <Text fontSize="sm" fontWeight="bold" fontFamily="mono">{address.slice(0,12)}...{address.slice(-6)}</Text>
+                <MenuList bg={menuBg} borderColor={borderColor} minW="220px">
+                  <Box px={4} py={3}>
+                    <Text fontSize="xs" color="gray.500" mb={1}>Adresă conectată</Text>
+                    <Text fontSize="sm" fontWeight="bold" fontFamily="mono" noOfLines={1}>
+                      {address.slice(0, 14)}…{address.slice(-6)}
+                    </Text>
                   </Box>
                   <MenuDivider />
-                  <MenuItem onClick={() => navigate('/profile')}   icon={<Text>👤</Text>}>Profilul Meu</MenuItem>
-                  <MenuItem onClick={() => navigate('/marketplace')} icon={<Text>⚓</Text>}>Navele Mele</MenuItem>
-                  <MenuItem onClick={() => navigate('/staking')}   icon={<Text>💎</Text>}>Staking</MenuItem>
-                  <MenuItem onClick={() => navigate('/leaderboard')} icon={<Text>🏅</Text>}>Leaderboard</MenuItem>
+                  <MenuItem onClick={() => navigate('/lobby')}       icon={<Text>🎮</Text>}>Joacă</MenuItem>
                   <MenuItem onClick={() => navigate('/tournaments')} icon={<Text>🏆</Text>}>Turnee</MenuItem>
+                  <MenuItem onClick={() => navigate('/staking')}     icon={<Text>💎</Text>}>Staking</MenuItem>
+                  <MenuItem onClick={() => navigate('/marketplace')} icon={<Text>⚓</Text>}>Marketplace</MenuItem>
+                  <MenuItem onClick={() => navigate('/leaderboard')} icon={<Text>🏅</Text>}>Leaderboard</MenuItem>
+                  <MenuItem onClick={() => navigate('/profile')}     icon={<Text>👤</Text>}>Profil</MenuItem>
                   <MenuDivider />
-                  <MenuItem onClick={handleLogout} color="red.400" icon={<Text>🚪</Text>}>Deconectează</MenuItem>
+                  <MenuItem onClick={handleLogout} color="red.400"   icon={<Text>🚪</Text>}>
+                    Deconectează
+                  </MenuItem>
                 </MenuList>
               </Menu>
             ) : (
-              <Button colorScheme="blue" size="sm" onClick={onWalletOpen} leftIcon={<Text fontSize="sm">🔗</Text>}>
+              <Button
+                colorScheme="blue" size="sm"
+                onClick={onWalletOpen}
+                leftIcon={<Text fontSize="sm">🔗</Text>}
+              >
                 <Text display={{ base: 'none', sm: 'inline' }}>Conectează Wallet</Text>
-                <Text display={{ base: 'inline', sm: 'none' }}>Login</Text>
+                <Text display={{ base: 'inline',  sm: 'none' }}>Login</Text>
               </Button>
             )}
 
+            {/* Hamburger — mobile only */}
             <IconButton
-              aria-label="Menu" icon={<HamburgerIcon />} variant="ghost" size="sm"
-              display={{ base: 'flex', md: 'none' }} onClick={onDrawerOpen}
+              aria-label="Meniu"
+              icon={<HamburgerIcon />}
+              variant="ghost" size="sm"
+              display={{ base: 'flex', lg: 'none' }}
+              onClick={onDrawerOpen}
             />
           </HStack>
         </Flex>
-      </Box>
 
-      {/* Mobile Drawer */}
-      <Drawer isOpen={isDrawerOpen} placement="right" onClose={onDrawerClose} size="xs">
-        <DrawerOverlay />
-        <DrawerContent bg={useColorModeValue('white', 'gray.900')}>
-          <DrawerCloseButton />
-          <DrawerHeader borderBottomWidth="1px">
-            <HStack><Text fontSize="xl">⚓</Text>
-              <Text fontWeight={900} bgGradient="linear(to-r, blue.400, cyan.400)" bgClip="text">MetaShipX</Text>
-            </HStack>
-          </DrawerHeader>
-          <DrawerBody pt={4}>
-            <VStack spacing={2} align="stretch">
-              {NAV_LINKS.map(link => (
-                <Button key={link.href}
-                  variant={isActive(link.href) ? 'solid' : 'ghost'}
-                  colorScheme={isActive(link.href) ? 'blue' : 'gray'}
-                  justifyContent="start"
-                  onClick={() => { navigate(link.href); onDrawerClose(); }}
+        {/* ── Tablet sub-nav (md screens) ── */}
+        <Box display={{ base: 'none', md: 'flex', lg: 'none' }} borderTop="1px" borderColor={borderColor}>
+          <Flex maxW="container.xl" mx="auto" px={6} gap={1} py={1}>
+            {ALL_NAV.map(link => {
+              const active = isActiveRoute(pathname, link.href);
+              return (
+                <Button
+                  key={link.href}
+                  variant={active ? 'solid' : 'ghost'}
+                  colorScheme={active ? 'blue' : 'gray'}
+                  size="xs"
+                  fontWeight={active ? 700 : 400}
+                  onClick={() => navigate(link.href)}
                 >
                   {link.label}
                 </Button>
-              ))}
-              <Box pt={4}>
-                {isLoggedIn ? (
-                  <Button colorScheme="red" variant="outline" w="full" onClick={handleLogout}>🚪 Deconectează</Button>
-                ) : (
-                  <Button colorScheme="blue" w="full" onClick={() => { onWalletOpen(); onDrawerClose(); }}>🔗 Conectează Wallet</Button>
-                )}
-              </Box>
+              );
+            })}
+          </Flex>
+        </Box>
+      </Box>
+
+      {/* ── Mobile drawer ── */}
+      <Drawer isOpen={isDrawerOpen} placement="right" onClose={onDrawerClose} size="xs">
+        <DrawerOverlay backdropFilter="blur(4px)" />
+        <DrawerContent bg={useColorModeValue('white', 'gray.950')}>
+          <DrawerCloseButton />
+          <DrawerHeader borderBottomWidth="1px">
+            <HStack>
+              <Text fontSize="xl">⚓</Text>
+              <Text fontWeight={900} bgGradient="linear(to-r, blue.400, cyan.300)" bgClip="text">
+                MetaShipX
+              </Text>
+            </HStack>
+          </DrawerHeader>
+          <DrawerBody pt={4}>
+            <VStack spacing={1} align="stretch">
+              {/* Primary links */}
+              {PRIMARY_NAV.map(link => {
+                const active = isActiveRoute(pathname, link.href);
+                return (
+                  <Button
+                    key={link.href}
+                    variant={active ? 'solid' : 'ghost'}
+                    colorScheme={active ? 'blue' : 'gray'}
+                    justifyContent="start"
+                    fontWeight={active ? 700 : 500}
+                    onClick={() => { navigate(link.href); onDrawerClose(); }}
+                  >
+                    {link.label}
+                  </Button>
+                );
+              })}
+
+              <Divider my={2} />
+
+              {/* Secondary links */}
+              {SECONDARY_NAV.map(link => {
+                const active = isActiveRoute(pathname, link.href);
+                return (
+                  <Button
+                    key={link.href}
+                    variant={active ? 'solid' : 'ghost'}
+                    colorScheme={active ? 'blue' : 'gray'}
+                    justifyContent="start"
+                    fontWeight={active ? 700 : 500}
+                    size="sm"
+                    onClick={() => { navigate(link.href); onDrawerClose(); }}
+                  >
+                    {link.label}
+                  </Button>
+                );
+              })}
+
+              <Divider my={2} />
+
+              {isLoggedIn ? (
+                <Button
+                  colorScheme="red" variant="outline" w="full"
+                  onClick={() => { handleLogout(); onDrawerClose(); }}
+                >
+                  🚪 Deconectează
+                </Button>
+              ) : (
+                <Button
+                  colorScheme="blue" w="full"
+                  onClick={() => { onWalletOpen(); onDrawerClose(); }}
+                >
+                  🔗 Conectează Wallet
+                </Button>
+              )}
             </VStack>
           </DrawerBody>
         </DrawerContent>
       </Drawer>
 
-      {/* Wallet Login Modal */}
+      {/* ── Wallet login drawer ── */}
       <Drawer isOpen={isWalletOpen} placement="right" onClose={onWalletClose} size="sm">
         <DrawerOverlay backdropFilter="blur(4px)" />
-        <DrawerContent bg={useColorModeValue('white', 'gray.900')}>
+        <DrawerContent bg={useColorModeValue('white', 'gray.950')}>
           <DrawerCloseButton />
           <DrawerHeader borderBottomWidth="1px">
             <VStack align="start" spacing={1}>
               <Text fontWeight={900} fontSize="lg">🔗 Conectează Wallet</Text>
-              <Text fontSize="sm" color="gray.500" fontWeight="normal">Alege metoda de autentificare MultiversX</Text>
+              <Text fontSize="sm" color="gray.500" fontWeight="normal">
+                Alege metoda de autentificare MultiversX
+              </Text>
             </VStack>
           </DrawerHeader>
           <DrawerBody>
-            <VStack spacing={4} pt={4}>
+            <VStack spacing={3} pt={4}>
+              {/* xPortal */}
               <Box w="full" borderRadius="xl" border="1px" borderColor="blue.700" overflow="hidden">
-                <WalletConnectLoginButton callbackRoute="/" loginButtonText="" wrapContentInsideModal={false} isWalletConnectV2>
-                  <Flex p={4} align="center" gap={4} cursor="pointer" w="full" _hover={{ bg: 'blue.900' }} transition="background 0.2s">
+                <WalletConnectLoginButton
+                  callbackRoute="/lobby"
+                  loginButtonText=""
+                  wrapContentInsideModal={false}
+                  isWalletConnectV2
+                >
+                  <Flex p={4} align="center" gap={4} cursor="pointer" w="full"
+                    _hover={{ bg: 'blue.900' }} transition="background 0.15s">
                     <Text fontSize="2xl">📱</Text>
                     <VStack align="start" spacing={0} flex={1}>
                       <Text fontWeight="bold" color="white">xPortal App</Text>
@@ -200,9 +332,12 @@ export default function Navbar() {
                   </Flex>
                 </WalletConnectLoginButton>
               </Box>
+
+              {/* Extension */}
               <Box w="full" borderRadius="xl" border="1px" borderColor="gray.700" overflow="hidden">
-                <ExtensionLoginButton callbackRoute="/" loginButtonText="" wrapContentInsideModal={false}>
-                  <Flex p={4} align="center" gap={4} cursor="pointer" w="full" _hover={{ bg: 'gray.800' }} transition="background 0.2s">
+                <ExtensionLoginButton callbackRoute="/lobby" loginButtonText="" wrapContentInsideModal={false}>
+                  <Flex p={4} align="center" gap={4} cursor="pointer" w="full"
+                    _hover={{ bg: 'gray.800' }} transition="background 0.15s">
                     <Text fontSize="2xl">🧩</Text>
                     <VStack align="start" spacing={0} flex={1}>
                       <Text fontWeight="bold" color="white">Browser Extension</Text>
@@ -211,9 +346,12 @@ export default function Navbar() {
                   </Flex>
                 </ExtensionLoginButton>
               </Box>
+
+              {/* Web Wallet */}
               <Box w="full" borderRadius="xl" border="1px" borderColor="gray.700" overflow="hidden">
-                <WebWalletLoginButton callbackRoute="/" loginButtonText="" wrapContentInsideModal={false}>
-                  <Flex p={4} align="center" gap={4} cursor="pointer" w="full" _hover={{ bg: 'gray.800' }} transition="background 0.2s">
+                <WebWalletLoginButton callbackRoute="/lobby" loginButtonText="" wrapContentInsideModal={false}>
+                  <Flex p={4} align="center" gap={4} cursor="pointer" w="full"
+                    _hover={{ bg: 'gray.800' }} transition="background 0.15s">
                     <Text fontSize="2xl">🌐</Text>
                     <VStack align="start" spacing={0} flex={1}>
                       <Text fontWeight="bold" color="white">Web Wallet</Text>
@@ -222,9 +360,12 @@ export default function Navbar() {
                   </Flex>
                 </WebWalletLoginButton>
               </Box>
+
+              {/* Ledger */}
               <Box w="full" borderRadius="xl" border="1px" borderColor="gray.700" overflow="hidden">
-                <LedgerLoginButton callbackRoute="/" loginButtonText="" wrapContentInsideModal={false}>
-                  <Flex p={4} align="center" gap={4} cursor="pointer" w="full" _hover={{ bg: 'gray.800' }} transition="background 0.2s">
+                <LedgerLoginButton callbackRoute="/lobby" loginButtonText="" wrapContentInsideModal={false}>
+                  <Flex p={4} align="center" gap={4} cursor="pointer" w="full"
+                    _hover={{ bg: 'gray.800' }} transition="background 0.15s">
                     <Text fontSize="2xl">🔐</Text>
                     <VStack align="start" spacing={0} flex={1}>
                       <Text fontWeight="bold" color="white">Ledger Hardware</Text>
@@ -233,6 +374,7 @@ export default function Navbar() {
                   </Flex>
                 </LedgerLoginButton>
               </Box>
+
               <Text fontSize="xs" color="gray.600" textAlign="center" pt={2}>
                 Prin conectare, accepți că tranzacțiile sunt ireversibile pe blockchain.
               </Text>
