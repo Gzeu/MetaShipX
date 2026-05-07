@@ -1,19 +1,25 @@
 /** MultiversX network & contract configuration */
 export const NETWORK_CONFIG = {
-  chainId: 'D',          // 'D' = devnet, 'T' = testnet, '1' = mainnet
+  chainId: 'D',
   apiUrl: 'https://devnet-api.multiversx.com',
   explorerUrl: 'https://devnet-explorer.multiversx.com',
 };
 
-/** Replace with deployed contract addresses */
+export const environment = {
+  id: 'devnet' as 'devnet' | 'testnet' | 'mainnet',
+  walletConnectV2ProjectId: import.meta.env.VITE_WALLET_CONNECT_V2_PROJECT_ID ?? '',
+};
+
 export const BATTLESHIP_CONTRACT_ADDRESS =
-  'erd1qqqqqqqqqqqqqpgq000000000000000000000000000000000000000000'; // TODO: deploy & set
+  import.meta.env.VITE_BATTLESHIP_ADDRESS ??
+  'erd1qqqqqqqqqqqqqpgq000000000000000000000000000000000000000000';
 
 export const NFT_CONTRACT_ADDRESS =
-  'erd1qqqqqqqqqqqqqpgq000000000000000000000000000000000000000001'; // TODO: deploy & set
+  import.meta.env.VITE_NFT_ADDRESS ??
+  'erd1qqqqqqqqqqqqqpgq000000000000000000000000000000000000000001';
 
 export const STAKING_CONTRACT_ADDRESS =
-  'erd1qqqqqqqqqqqqqpgq000000000000000000000000000000000000000002'; // TODO: deploy & set
+  import.meta.env.VITE_STAKING_ADDRESS ??
+  'erd1qqqqqqqqqqqqqpgq000000000000000000000000000000000000000002';
 
-/** Mint price in EGLD */
 export const MINT_PRICE_EGLD = '0.05';

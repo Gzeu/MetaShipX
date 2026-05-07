@@ -1,173 +1,67 @@
 import {
-  Address,
-  ContractFunction,
-  SmartContract,
-  U64Value,
-  AddressValue,
-  BigUIntValue,
+  Address, ContractFunction, SmartContract,
+  U64Value, BytesValue, ResultsParser,
 } from '@multiversx/sdk-core';
-import { sendTransactions } from '@multiversx/sdk-dapp/services';
-import { getNetworkProvider } from '../utils/network';
-import { TOURNAMENT_ADDRESS } from '../config';
+import { ProxyNetworkProvider } from '@multiversx/sdk-network-providers';
+import { refreshAccount } from '@multiversx/sdk-dapp/out/utils/account/refreshAccount';
+import { TransactionManager } from '@multiversx/sdk-dapp/out/managers/TransactionManager';
+import { ProviderFactory } from '@multiversx/sdk-dapp/out/providers/ProviderFactory';
+import { ProviderTypeEnum } from '@multiversx/sdk-dapp/out/providers/types/providerFactory.types';
+import { BATTLESHIP_CONTRACT_ADDRESS, NETWORK_CONFIG } from '../config';
 
-const tournamentContract = new SmartContract({ address: new Address(TOURNAMENT_ADDRESS) });
-
-export interface TournamentInfo {
+export interface Tournament {
   id: number;
   name: string;
   entryFee: string;
   prizePool: string;
   maxPlayers: number;
-  registeredCount: number;
+  currentPlayers: number;
   status: 'Registration' | 'InProgress' | 'Finished';
-  winner?: string;
+  winner: string | null;
+  startTime: number;
 }
 
-export interface MatchInfo {
-  matchId: number;
-  player1: string;
-  player2: string;
-  winner?: string;
-  gameId?: number;
-  status: 'Pending' | 'InProgress' | 'Finished';
+const provider = new ProxyNetworkProvider(NETWORK_CONFIG.apiUrl);
+const contract = new SmartContract({ address: new Address(BATTLESHIP_CONTRACT_ADDRESS) });
+
+async function sendTx(tx: any, displayInfo: { processingMessage: string; errorMessage: string; successMessage: string }) {
+  await refreshAccount();
+  const dappProvider = await ProviderFactory.create({ type: ProviderTypeEnum.extension });
+  const signed = await dappProvider.signTransactions([tx]);
+  const txManager = TransactionManager.getInstance();
+  const sent = await txManager.send(signed);
+  return txManager.track(sent, { transactionsDisplayInfo: displayInfo });
 }
 
-// ── Write endpoints ──────────────────────────────────────────────────────────
+export async function joinTournament(tournamentId: number, entryFeeEgld: string) {
+  const feeWei = BigInt(Math.round(parseFloat(entryFeeEgld) * 1e18));
+  const tx = contract.methods.joinTournament([new U64Value(tournamentId)]).withValue(feeWei).withGasLimit(15_000_000).withChainID(NETWORK_CONFIG.chainId).buildTransaction();
+  return sendTx(tx, { processingMessage: 'Joining tournament...', errorMessage: 'Error joining', successMessage: 'Joined tournament!' });
+}
 
-export const tournamentService = {
-  /** Register for an upcoming tournament */
-  async registerForTournament(tournamentId: number, entryFee: string): Promise<void> {
-    const tx = tournamentContract.call({
-      func: new ContractFunction('registerPlayer'),
-      args: [new U64Value(tournamentId)],
-      value: BigInt(entryFee),
-      gasLimit: 10_000_000,
-    });
-    await sendTransactions({ transactions: [tx] });
-  },
+export async function getTournament(id: number): Promise<Tournament> {
+  const query = contract.createQuery({ func: new ContractFunction('getTournament'), args: [new U64Value(id)] });
+  const qr = await provider.queryContract(query);
+  const bundle = new ResultsParser().parseQueryResponse(qr, contract.getEndpoint('getTournament'));
+  const d = bundle.firstValue!.valueOf();
+  return {
+    id,
+    name: d.name?.toString() ?? `Tournament #${id}`,
+    entryFee: d.entry_fee?.toString() ?? '0',
+    prizePool: d.prize_pool?.toString() ?? '0',
+    maxPlayers: Number(d.max_players ?? 8),
+    currentPlayers: Number(d.current_players ?? 0),
+    status: d.status?.name ?? 'Registration',
+    winner: d.winner?.toString() ?? null,
+    startTime: Number(d.start_time ?? 0),
+  };
+}
 
-  /** Owner: create a new tournament */
-  async createTournament(
-    name: string,
-    entryFee: string,
-    maxPlayers: number,
-    startTime: number
-  ): Promise<void> {
-    const { StringValue } = await import('@multiversx/sdk-core');
-    const tx = tournamentContract.call({
-      func: new ContractFunction('createTournament'),
-      args: [
-        new StringValue(name),
-        new BigUIntValue(BigInt(entryFee)),
-        new U64Value(maxPlayers),
-        new U64Value(startTime),
-      ],
-      gasLimit: 15_000_000,
-    });
-    await sendTransactions({ transactions: [tx] });
-  },
+export async function getActiveTournaments(): Promise<number[]> {
+  const query = contract.createQuery({ func: new ContractFunction('getActiveTournaments'), args: [] });
+  const qr = await provider.queryContract(query);
+  const bundle = new ResultsParser().parseQueryResponse(qr, contract.getEndpoint('getActiveTournaments'));
+  return bundle.values.map((v) => Number(v.valueOf()));
+}
 
-  /** Owner: start bracket generation */
-  async startTournament(tournamentId: number): Promise<void> {
-    const tx = tournamentContract.call({
-      func: new ContractFunction('startTournament'),
-      args: [new U64Value(tournamentId)],
-      gasLimit: 15_000_000,
-    });
-    await sendTransactions({ transactions: [tx] });
-  },
-
-  /** Claim prize after winning */
-  async claimPrize(tournamentId: number): Promise<void> {
-    const tx = tournamentContract.call({
-      func: new ContractFunction('claimPrize'),
-      args: [new U64Value(tournamentId)],
-      gasLimit: 10_000_000,
-    });
-    await sendTransactions({ transactions: [tx] });
-  },
-
-  // ── Views ──────────────────────────────────────────────────────────────────
-
-  async getTournament(tournamentId: number): Promise<TournamentInfo | null> {
-    const provider = getNetworkProvider();
-    try {
-      const res = await provider.queryContract({
-        address: TOURNAMENT_ADDRESS,
-        func: 'getTournament',
-        args: [tournamentId.toString(16).padStart(16, '0')],
-      });
-      if (!res.returnData?.[0]) return null;
-      // Parse response — simplified; production uses ABI decoder
-      return JSON.parse(Buffer.from(res.returnData[0], 'base64').toString()) as TournamentInfo;
-    } catch {
-      return null;
-    }
-  },
-
-  async listActiveTournaments(): Promise<TournamentInfo[]> {
-    const provider = getNetworkProvider();
-    try {
-      const res = await provider.queryContract({
-        address: TOURNAMENT_ADDRESS,
-        func: 'getActiveTournaments',
-        args: [],
-      });
-      return (res.returnData ?? []).map((d: string) =>
-        JSON.parse(Buffer.from(d, 'base64').toString())
-      ) as TournamentInfo[];
-    } catch {
-      return [];
-    }
-  },
-
-  async getPlayerTournaments(playerAddress: string): Promise<number[]> {
-    const provider = getNetworkProvider();
-    try {
-      const res = await provider.queryContract({
-        address: TOURNAMENT_ADDRESS,
-        func: 'getPlayerTournaments',
-        args: [new Address(playerAddress).hex()],
-      });
-      return (res.returnData ?? []).map((d: string) =>
-        parseInt(Buffer.from(d, 'base64').toString('hex'), 16)
-      );
-    } catch {
-      return [];
-    }
-  },
-
-  async getMatchInfo(tournamentId: number, matchId: number): Promise<MatchInfo | null> {
-    const provider = getNetworkProvider();
-    try {
-      const res = await provider.queryContract({
-        address: TOURNAMENT_ADDRESS,
-        func: 'getMatch',
-        args: [
-          tournamentId.toString(16).padStart(16, '0'),
-          matchId.toString(16).padStart(16, '0'),
-        ],
-      });
-      if (!res.returnData?.[0]) return null;
-      return JSON.parse(Buffer.from(res.returnData[0], 'base64').toString()) as MatchInfo;
-    } catch {
-      return null;
-    }
-  },
-
-  async getTournamentBracket(tournamentId: number): Promise<MatchInfo[]> {
-    const provider = getNetworkProvider();
-    try {
-      const res = await provider.queryContract({
-        address: TOURNAMENT_ADDRESS,
-        func: 'getBracket',
-        args: [tournamentId.toString(16).padStart(16, '0')],
-      });
-      return (res.returnData ?? []).map((d: string) =>
-        JSON.parse(Buffer.from(d, 'base64').toString())
-      ) as MatchInfo[];
-    } catch {
-      return [];
-    }
-  },
-};
+export const tournamentService = { joinTournament, getTournament, getActiveTournaments };

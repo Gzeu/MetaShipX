@@ -1,67 +1,41 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-import { DappProvider as MultiversxDappProvider, NetworkId } from '@multiversx/sdk-dapp';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { EnvironmentsEnum } from '@multiversx/sdk-dapp/out/types/enums.types';
+import { useGetAccountInfo } from '@multiversx/sdk-dapp/out/react/account/useGetAccountInfo';
+import { useGetLoginInfo } from '@multiversx/sdk-dapp/out/react/loginInfo/useGetLoginInfo';
 import { environment } from '../config';
-import { useGetAccountInfo, useGetLoginInfo } from '@multiversx/sdk-dapp/hooks';
 
 type DappContextType = {
   isLoggedIn: boolean;
   address: string;
-  login: (method: 'wallet' | 'extension') => Promise<void>;
-  logout: () => void;
   isInitialized: boolean;
+  environment: EnvironmentsEnum;
 };
 
 const DappContext = createContext<DappContextType | undefined>(undefined);
 
 export const DappProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isInitialized, setIsInitialized] = useState(false);
-  const { address, account } = useGetAccountInfo();
+  const { address } = useGetAccountInfo();
   const { isLoggedIn } = useGetLoginInfo();
 
-  useEffect(() => {
-    // Initialize any required services here
-    setIsInitialized(true);
-  }, []);
+  useEffect(() => { setIsInitialized(true); }, []);
 
-  const login = async (method: 'wallet' | 'extension') => {
-    // Implementation for login
-    console.log(`Login with ${method}`);
-  };
-
-  const logout = () => {
-    // Implementation for logout
-    console.log('Logout');  };
+  const env =
+    environment.id === 'mainnet' ? EnvironmentsEnum.mainnet
+    : environment.id === 'testnet' ? EnvironmentsEnum.testnet
+    : EnvironmentsEnum.devnet;
 
   return (
-    <MultiversxDappProvider
-      environment={environment.id as NetworkId}
-      customNetworkConfig={{
-        name: environment.id,
-        apiTimeout: 6000,
-        walletConnectV2ProjectId: environment.walletConnectV2ProjectId,
-      }}
-    >
-      <DappContext.Provider
-        value={{
-          isLoggedIn,
-          address: address,
-          login,
-          logout,
-          isInitialized,
-        }}
-      >
-        {children}
-      </DappContext.Provider>
-    </MultiversxDappProvider>
+    <DappContext.Provider value={{ isLoggedIn, address: address ?? '', isInitialized, environment: env }}>
+      {children}
+    </DappContext.Provider>
   );
 };
 
 export const useDapp = (): DappContextType => {
-  const context = useContext(DappContext);
-  if (!context) {
-    throw new Error('useDapp must be used within a DappProvider');
-  }
-  return context;
+  const ctx = useContext(DappContext);
+  if (!ctx) throw new Error('useDapp must be used within a DappProvider');
+  return ctx;
 };
 
 export default DappProvider;
