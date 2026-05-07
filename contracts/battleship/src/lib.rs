@@ -10,6 +10,8 @@ const BOARD_SIZE: u8 = 10;
 /// Ship lengths for the 5 standard ships
 const SHIP_LENGTHS: [u8; 5] = [5, 4, 3, 3, 2];
 
+// ── Types ───────────────────────────────────────────────────────────────────
+
 #[derive(NestedEncode, NestedDecode, TopEncode, TopDecode, TypeAbi, PartialEq, Clone)]
 pub enum GamePhase {
     WaitingForOpponent,
@@ -27,11 +29,13 @@ pub struct GameState<M: ManagedTypeApi> {
     /// 0 = creator's turn, 1 = opponent's turn
     pub current_turn: u8,
     pub winner: Option<ManagedAddress<M>>,
+    /// If non-zero, this game is part of a tournament match
+    pub tournament_id: u64,
+    pub tournament_match_id: u64,
 }
 
 #[derive(NestedEncode, NestedDecode, TopEncode, TopDecode, TypeAbi, Clone)]
 pub struct ShipData {
-    /// Encoded as (x * 10 + y) for each cell the ship occupies
     pub cells: ArrayVec<u8, 5>,
     pub hits: u8,
     pub length: u8,
@@ -46,7 +50,7 @@ pub struct ShipPosition {
     pub is_vertical: bool,
 }
 
-#[derive(NestedEncode, NestedDecode, TopEncode, TopDecode, TypeAbi, PartialEq)]
+#[derive(NestedEncode, NestedDecode, TopEncode, TopDecode, TypeAbi, PartialEq, Clone)]
 pub enum AttackResult {
     Hit,
     Miss,
@@ -54,16 +58,19 @@ pub enum AttackResult {
     GameOver,
 }
 
+// ── Contract ────────────────────────────────────────────────────────────────
+
 #[multiversx_sc::contract]
 pub trait Battleship {
-    // ─── Init ──────────────────────────────────────────────────────────────────
+
+    // ── Init ────────────────────────────────────────────────────────────────
 
     #[init]
     fn init(&self) {
         self.game_counter().set(0u64);
     }
 
-    // ─── Storage ───────────────────────────────────────────────────────────────
+    // ── Storage ─────────────────────────────────────────────────────────────
 
     #[storage_mapper("game_counter")]
     fn game_counter(&self) -> SingleValueMapper<u64>;
@@ -74,19 +81,20 @@ pub trait Battleship {
     #[storage_mapper("player_games")]
     fn player_games(&self, player: &ManagedAddress) -> UnorderedSetMapper<u64>;
 
-    /// Stores ships for (game_id, player_index 0|1)
     #[storage_mapper("ships")]
     fn ships(&self, game_id: u64, player_idx: u8) -> VecMapper<ShipData>;
 
-    /// Bitboard of attacked cells for (game_id, player_idx)
     #[storage_mapper("attacked")]
     fn attacked(&self, game_id: u64, player_idx: u8) -> UnorderedSetMapper<u8>;
 
-    /// Whether a player has placed ships: (game_id, player_idx)
     #[storage_mapper("ships_placed")]
     fn ships_placed(&self, game_id: u64, player_idx: u8) -> SingleValueMapper<bool>;
 
-    // ─── Events ────────────────────────────────────────────────────────────────
+    /// Address of the deployed tournament contract (optional; 0 = no integration)
+    #[storage_mapper("tournament_contract")]
+    fn tournament_contract(&self) -> SingleValueMapper<ManagedAddress>;
+
+    // ── Events ──────────────────────────────────────────────────────────────
 
     #[event("gameCreated")]
     fn game_created_event(&self, #[indexed] game_id: u64, #[indexed] creator: ManagedAddress);
@@ -110,15 +118,32 @@ pub trait Battleship {
     #[event("gameOver")]
     fn game_over_event(&self, #[indexed] game_id: u64, #[indexed] winner: ManagedAddress);
 
-    // ─── Endpoints ─────────────────────────────────────────────────────────────
+    #[event("tournamentResultReported")]
+    fn tournament_result_reported_event(
+        &self,
+        #[indexed] game_id: u64,
+        #[indexed] tournament_id: u64,
+        #[indexed] match_id: u64,
+        #[indexed] winner: ManagedAddress,
+    );
 
-    /// Create a new game. Caller sends the bet amount in EGLD.
+    // ── Owner Config ────────────────────────────────────────────────────────
+
+    /// Set the tournament contract address so battleship can auto-report results.
+    #[only_owner]
+    #[endpoint(setTournamentContract)]
+    fn set_tournament_contract(&self, addr: ManagedAddress) {
+        self.tournament_contract().set(addr);
+    }
+
+    // ── Endpoints ───────────────────────────────────────────────────────────
+
+    /// Create a regular game (no tournament).
     #[payable("EGLD")]
     #[endpoint(createGame)]
     fn create_game(&self) -> u64 {
         let bet = self.call_value().egld_value().clone_value();
         require!(bet > 0u64, "Bet must be greater than 0");
-
         let caller = self.blockchain().get_caller();
         let game_id = self.game_counter().get() + 1;
         self.game_counter().set(game_id);
@@ -130,15 +155,55 @@ pub trait Battleship {
             phase: GamePhase::WaitingForOpponent,
             current_turn: 0,
             winner: None,
+            tournament_id: 0,
+            tournament_match_id: 0,
         };
         self.game_state(game_id).set(&state);
         self.player_games(&caller).insert(game_id);
-
         self.game_created_event(game_id, caller);
         game_id
     }
 
-    /// Join an existing game. Caller must send the exact same bet.
+    /// Create a tournament match game (called by tournament contract or owner).
+    /// No bet required — prize is handled by the tournament contract.
+    #[endpoint(createTournamentGame)]
+    fn create_tournament_game(
+        &self,
+        player1: ManagedAddress,
+        player2: ManagedAddress,
+        tournament_id: u64,
+        match_id: u64,
+    ) -> u64 {
+        // Only tournament contract or owner may call this
+        let caller = self.blockchain().get_caller();
+        let owner = self.blockchain().get_owner_address();
+        let t_contract = self.tournament_contract().get();
+        require!(
+            caller == owner || caller == t_contract,
+            "Unauthorized: only owner or tournament contract"
+        );
+
+        let game_id = self.game_counter().get() + 1;
+        self.game_counter().set(game_id);
+
+        let state = GameState {
+            creator: player1.clone(),
+            opponent: Some(player2.clone()),
+            bet: BigUint::zero(),
+            phase: GamePhase::PlacingShips,
+            current_turn: 0,
+            winner: None,
+            tournament_id,
+            tournament_match_id: match_id,
+        };
+        self.game_state(game_id).set(&state);
+        self.player_games(&player1).insert(game_id);
+        self.player_games(&player2).insert(game_id);
+        self.game_created_event(game_id, player1);
+        game_id
+    }
+
+    /// Join an existing regular game.
     #[payable("EGLD")]
     #[endpoint(joinGame)]
     fn join_game(&self, game_id: u64) {
@@ -146,23 +211,18 @@ pub trait Battleship {
         let caller = self.blockchain().get_caller();
 
         let mut state = self.game_state(game_id).get();
-        require!(
-            state.phase == GamePhase::WaitingForOpponent,
-            "Game is not waiting for an opponent"
-        );
-        require!(caller != state.creator, "Creator cannot join their own game");
-        require!(payment == state.bet, "Payment must match the game bet");
+        require!(state.phase == GamePhase::WaitingForOpponent, "Game not waiting");
+        require!(caller != state.creator, "Creator cannot join");
+        require!(payment == state.bet, "Wrong bet amount");
 
         state.opponent = Some(caller.clone());
         state.phase = GamePhase::PlacingShips;
         self.game_state(game_id).set(&state);
         self.player_games(&caller).insert(game_id);
-
         self.game_joined_event(game_id, caller);
     }
 
-    /// Place ships for the caller in the given game.
-    /// Expects exactly 5 ships with lengths [5,4,3,3,2] in any order.
+    /// Place ships.
     #[endpoint(placeShips)]
     fn place_ships(
         &self,
@@ -171,42 +231,25 @@ pub trait Battleship {
     ) {
         let caller = self.blockchain().get_caller();
         let mut state = self.game_state(game_id).get();
-        require!(
-            state.phase == GamePhase::PlacingShips,
-            "Game is not in placement phase"
-        );
+        require!(state.phase == GamePhase::PlacingShips, "Not in placement phase");
 
         let player_idx = self.get_player_idx(&state, &caller);
-        require!(
-            !self.ships_placed(game_id, player_idx).get(),
-            "Ships already placed"
-        );
+        require!(!self.ships_placed(game_id, player_idx).get(), "Ships already placed");
 
         let pos_vec: ManagedVec<MultiValue4<u8, u8, u8, bool>> = positions.to_vec();
         require!(pos_vec.len() == MAX_SHIPS, "Must place exactly 5 ships");
 
-        // Validate and store each ship
-        let mut occupied: ArrayVec<u8, 25> = ArrayVec::new(); // max 5+4+3+3+2 = 17 cells
+        let mut occupied: ArrayVec<u8, 25> = ArrayVec::new();
         for i in 0..MAX_SHIPS {
             let (x, y, length, is_vertical) = pos_vec.get(i).into_tuple();
             let expected_len = SHIP_LENGTHS[i];
             require!(length == expected_len, "Invalid ship length");
             require!(x < BOARD_SIZE && y < BOARD_SIZE, "Ship out of bounds");
 
-            let mut ship = ShipData {
-                cells: ArrayVec::new(),
-                hits: 0,
-                length,
-                sunk: false,
-            };
-
+            let mut ship = ShipData { cells: ArrayVec::new(), hits: 0, length, sunk: false };
             for step in 0..length {
-                let (cx, cy) = if is_vertical {
-                    (x + step, y)
-                } else {
-                    (x, y + step)
-                };
-                require!(cx < BOARD_SIZE && cy < BOARD_SIZE, "Ship extends out of bounds");
+                let (cx, cy) = if is_vertical { (x + step, y) } else { (x, y + step) };
+                require!(cx < BOARD_SIZE && cy < BOARD_SIZE, "Ship extends OOB");
                 let cell = cx * BOARD_SIZE + cy;
                 require!(!occupied.contains(&cell), "Ships overlap");
                 occupied.push(cell);
@@ -218,36 +261,31 @@ pub trait Battleship {
         self.ships_placed(game_id, player_idx).set(true);
         self.ships_placed_event(game_id, caller);
 
-        // If both players placed, start the game
         let other_idx = 1 - player_idx;
         if self.ships_placed(game_id, other_idx).get() {
             state.phase = GamePhase::InProgress;
-            state.current_turn = 0; // creator goes first
+            state.current_turn = 0;
             self.game_state(game_id).set(&state);
         }
     }
 
-    /// Attack a cell on the opponent's board.
+    /// Attack a cell.
     #[endpoint(attack)]
     fn attack(&self, game_id: u64, x: u8, y: u8) -> AttackResult {
-        require!(x < BOARD_SIZE && y < BOARD_SIZE, "Coordinates out of bounds");
+        require!(x < BOARD_SIZE && y < BOARD_SIZE, "OOB");
         let cell = x * BOARD_SIZE + y;
 
         let caller = self.blockchain().get_caller();
         let mut state = self.game_state(game_id).get();
-        require!(state.phase == GamePhase::InProgress, "Game is not in progress");
+        require!(state.phase == GamePhase::InProgress, "Not in progress");
 
         let player_idx = self.get_player_idx(&state, &caller);
         require!(state.current_turn == player_idx, "Not your turn");
 
         let opponent_idx = 1 - player_idx;
-        require!(
-            !self.attacked(game_id, opponent_idx).contains(&cell),
-            "Cell already attacked"
-        );
+        require!(!self.attacked(game_id, opponent_idx).contains(&cell), "Already attacked");
         self.attacked(game_id, opponent_idx).insert(cell);
 
-        // Check hit against opponent ships
         let ship_count = self.ships(game_id, opponent_idx).len();
         let mut hit = false;
         let mut sunk = false;
@@ -257,50 +295,46 @@ pub trait Battleship {
             if ship.cells.contains(&cell) && !ship.sunk {
                 ship.hits += 1;
                 hit = true;
-                if ship.hits >= ship.length {
-                    ship.sunk = true;
-                    sunk = true;
-                }
+                if ship.hits >= ship.length { ship.sunk = true; sunk = true; }
                 self.ships(game_id, opponent_idx).set(idx, &ship);
                 break;
             }
         }
 
-        // Check if all opponent ships are sunk
         let all_sunk = if sunk {
-            let mut count = 0usize;
-            for idx in 1..=ship_count {
-                if self.ships(game_id, opponent_idx).get(idx).sunk {
-                    count += 1;
-                }
-            }
-            count == ship_count
-        } else {
-            false
-        };
+            (1..=ship_count).all(|idx| self.ships(game_id, opponent_idx).get(idx).sunk)
+        } else { false };
 
-        let result = if all_sunk {
-            AttackResult::GameOver
-        } else if sunk {
-            AttackResult::Sunk
-        } else if hit {
-            AttackResult::Hit
-        } else {
-            AttackResult::Miss
-        };
+        let result = if all_sunk { AttackResult::GameOver }
+            else if sunk { AttackResult::Sunk }
+            else if hit  { AttackResult::Hit }
+            else         { AttackResult::Miss };
 
         self.attack_made_event(game_id, caller.clone(), x, y, result.clone());
 
         if result == AttackResult::GameOver {
-            // Pay out total pot to winner
-            let prize = state.bet.clone() * 2u64;
+            // Regular game: pay out 2x bet to winner
+            if state.tournament_id == 0 {
+                let prize = state.bet.clone() * 2u64;
+                self.send().direct_egld(&caller, &prize);
+            }
+
             state.phase = GamePhase::Finished;
             state.winner = Some(caller.clone());
             self.game_state(game_id).set(&state);
             self.game_over_event(game_id, caller.clone());
-            self.send().direct_egld(&caller, &prize);
+
+            // ── Tournament integration ──────────────────────────────────────
+            // If this game belongs to a tournament, notify the tournament SC
+            if state.tournament_id != 0 {
+                self.report_tournament_result(
+                    game_id,
+                    state.tournament_id,
+                    state.tournament_match_id,
+                    caller,
+                );
+            }
         } else {
-            // Switch turns
             state.current_turn = opponent_idx;
             self.game_state(game_id).set(&state);
         }
@@ -308,24 +342,48 @@ pub trait Battleship {
         result
     }
 
-    /// Creator can withdraw their bet if no opponent has joined yet.
+    /// Creator withdraws bet when no opponent joined yet.
     #[endpoint(withdraw)]
     fn withdraw(&self, game_id: u64) {
         let caller = self.blockchain().get_caller();
         let mut state = self.game_state(game_id).get();
-        require!(caller == state.creator, "Only the creator can withdraw");
-        require!(
-            state.phase == GamePhase::WaitingForOpponent,
-            "Can only withdraw before an opponent joins"
-        );
-
+        require!(caller == state.creator, "Only creator");
+        require!(state.phase == GamePhase::WaitingForOpponent, "Cannot withdraw now");
         let bet = state.bet.clone();
         state.phase = GamePhase::Finished;
         self.game_state(game_id).set(&state);
         self.send().direct_egld(&caller, &bet);
     }
 
-    // ─── Views ─────────────────────────────────────────────────────────────────
+    // ── Internal: cross-contract call to tournament ──────────────────────────
+
+    fn report_tournament_result(
+        &self,
+        game_id: u64,
+        tournament_id: u64,
+        match_id: u64,
+        winner: ManagedAddress,
+    ) {
+        let t_addr = self.tournament_contract().get();
+        // Skip if tournament contract not configured
+        if t_addr == ManagedAddress::zero() { return; }
+
+        // Async cross-contract call — fire and forget
+        // Gas: 10M is sufficient for reportMatchResult endpoint
+        self.tournament_proxy(t_addr)
+            .report_match_result(tournament_id, match_id, winner.clone())
+            .with_gas_limit(10_000_000)
+            .transfer_execute();
+
+        self.tournament_result_reported_event(game_id, tournament_id, match_id, winner);
+    }
+
+    // ── Proxy for tournament contract ────────────────────────────────────────
+
+    #[proxy]
+    fn tournament_proxy(&self, sc_address: ManagedAddress) -> tournament_proxy::Proxy<Self::Api>;
+
+    // ── Views ────────────────────────────────────────────────────────────────
 
     #[view(getGameState)]
     fn get_game_state(&self, game_id: u64) -> GameState<Self::Api> {
@@ -335,23 +393,39 @@ pub trait Battleship {
     #[view(getPlayerGames)]
     fn get_player_games(&self, player: ManagedAddress) -> MultiValueEncoded<u64> {
         let mut result = MultiValueEncoded::new();
-        for gid in self.player_games(&player).iter() {
-            result.push(gid);
-        }
+        for gid in self.player_games(&player).iter() { result.push(gid); }
         result
     }
 
-    // ─── Helpers ───────────────────────────────────────────────────────────────
+    #[view(getTournamentContract)]
+    fn get_tournament_contract(&self) -> ManagedAddress {
+        self.tournament_contract().get()
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
 
     fn get_player_idx(&self, state: &GameState<Self::Api>, player: &ManagedAddress) -> u8 {
-        if player == &state.creator {
-            return 0;
-        }
+        if player == &state.creator { return 0; }
         if let Some(ref opp) = state.opponent {
-            if player == opp {
-                return 1;
-            }
+            if player == opp { return 1; }
         }
-        sc_panic!("Player is not part of this game");
+        sc_panic!("Player not in this game");
+    }
+}
+
+// ── Tournament SC proxy (generated types) ───────────────────────────────────
+
+mod tournament_proxy {
+    multiversx_sc::imports!();
+
+    #[multiversx_sc::proxy]
+    pub trait TournamentContract {
+        #[endpoint(reportMatchResult)]
+        fn report_match_result(
+            &self,
+            tournament_id: u64,
+            match_id: u64,
+            winner_address: ManagedAddress,
+        );
     }
 }
