@@ -1,0 +1,10 @@
+{
+  "language": "rust",
+  "settings": {
+    "output-dir": "output",
+    "contract": {
+      "name": "tournament",
+      "add-unlabelled-endpoints-to-wasm": true
+    }
+  }
+}

@@ -1,182 +1,249 @@
-import { NETWORK_CONFIG, BATTLESHIP_CONTRACT_ADDRESS } from '../config';
+import { Address, ContractFunction, ResultsParser, SmartContract, Transaction } from '@multiversx/sdk-core';
+import { sendTransactions } from '@multiversx/sdk-dapp/services';
+import { TOURNAMENT_CONTRACT_ADDRESS, GATEWAY_URL } from '../config';
+import { ProxyNetworkProvider } from '@multiversx/sdk-network-providers';
+
+const provider = new ProxyNetworkProvider(GATEWAY_URL);
+const resultsParser = new ResultsParser();
+
+// ── Types ──────────────────────────────────────────────────────────────────
 
 export type TournamentStatus = 'registration' | 'active' | 'completed';
 export type MatchStatus = 'pending' | 'active' | 'completed' | 'bye';
 
 export interface TournamentPlayer {
   address: string;
-  wins: number;
   seed: number;
+  wins: number;
+  eliminated: boolean;
 }
 
 export interface BracketMatch {
   id: string;
-  round: number;           // 1 = Quarter, 2 = Semi, 3 = Final
-  matchIndex: number;      // position in round
+  matchId: number;
+  round: number;
+  matchIndex: number;
   player1: TournamentPlayer | null;
   player2: TournamentPlayer | null;
   winner: TournamentPlayer | null;
+  gameId: number;
   status: MatchStatus;
-  gameId?: string;
-  scheduledAt?: number;
 }
 
 export interface Tournament {
   id: string;
   name: string;
-  status: TournamentStatus;
-  prizePool: string;        // EGLD formatted
-  entryFee: string;         // EGLD formatted
+  description: string;
+  entryFee: string;
+  prizePool: string;
   maxPlayers: number;
   registeredPlayers: TournamentPlayer[];
   bracket: BracketMatch[];
+  rounds: number;
+  status: TournamentStatus;
   startTime: number;
-  endTime?: number;
-  createdBy: string;
-  description: string;
-  rounds: number;           // log2(maxPlayers)
+  winner: string | null;
 }
 
-// —— helpers ——
-function makeAddr(suffix: string) {
-  return `erd1${suffix.padStart(58, '0')}`;
+// ── Status mapping ─────────────────────────────────────────────────────────
+
+function mapStatus(raw: number): TournamentStatus {
+  if (raw === 0) return 'registration';
+  if (raw === 1) return 'active';
+  return 'completed';
 }
-function randomSeed() { return Math.floor(Math.random() * 1000); }
 
-const PLAYERS_8: TournamentPlayer[] = [
-  { address: makeAddr('aaa1'), wins: 142, seed: 1 },
-  { address: makeAddr('bbb2'), wins: 98,  seed: 2 },
-  { address: makeAddr('ccc3'), wins: 87,  seed: 3 },
-  { address: makeAddr('ddd4'), wins: 75,  seed: 4 },
-  { address: makeAddr('eee5'), wins: 61,  seed: 5 },
-  { address: makeAddr('fff6'), wins: 55,  seed: 6 },
-  { address: makeAddr('ggg7'), wins: 44,  seed: 7 },
-  { address: makeAddr('hhh8'), wins: 38,  seed: 8 },
-];
+function mapMatchStatus(raw: number): MatchStatus {
+  if (raw === 0) return 'pending';
+  if (raw === 1) return 'active';
+  if (raw === 2) return 'completed';
+  return 'bye';
+}
 
-const PLAYERS_16: TournamentPlayer[] = Array.from({ length: 16 }, (_, i) => ({
-  address: makeAddr(`p${i + 1}`),
-  wins: 100 - i * 5,
-  seed: i + 1,
-}));
+// ── Smart contract instance ────────────────────────────────────────────────
 
-function buildBracket(players: TournamentPlayer[], completedRounds = 0): BracketMatch[] {
-  const n = players.length; // must be power of 2
-  const totalRounds = Math.log2(n);
+function getTournamentContract() {
+  return new SmartContract({ address: new Address(TOURNAMENT_CONTRACT_ADDRESS) });
+}
+
+// ── Bracket Generation (client-side preview) ───────────────────────────────
+
+/**
+ * Build a full single-elimination bracket from a player list.
+ * Uses seeded matchups: 1 vs N, 2 vs N-1, etc.
+ * Returns BracketMatch[] with all rounds, including Pending future rounds.
+ */
+export function generateBracket(players: TournamentPlayer[]): BracketMatch[] {
+  const n = players.length;
+  if (n < 2) return [];
+
+  // Pad to next power of 2
+  const size = nextPow2(n);
+  const rounds = Math.log2(size);
   const matches: BracketMatch[] = [];
+  let matchIdCounter = 1;
 
-  // Round 1 matchups: 1v8, 2v7, 3v6, 4v5 (seeded)
-  const pairs: [TournamentPlayer, TournamentPlayer][] = [];
-  for (let i = 0; i < n / 2; i++) {
-    pairs.push([players[i], players[n - 1 - i]]);
+  // Round 1: seeded matchups
+  for (let i = 0; i < size / 2; i++) {
+    const s1 = i;            // index in seeded array (0-based)
+    const s2 = size - 1 - i;
+    const p1 = players[s1] ?? null;
+    const p2 = players[s2] ?? null;
+    const isBye = !p2;
+
+    matches.push({
+      id: `m-${matchIdCounter}`,
+      matchId: matchIdCounter++,
+      round: 1,
+      matchIndex: i,
+      player1: p1,
+      player2: isBye ? null : p2,
+      winner: isBye ? p1 : null,
+      gameId: 0,
+      status: isBye ? 'bye' : 'pending',
+    });
   }
 
-  let prevRoundMatches: BracketMatch[] = [];
-  for (let round = 1; round <= totalRounds; round++) {
-    const roundMatches: BracketMatch[] = [];
-    const matchCount = n / Math.pow(2, round);
-
-    for (let mi = 0; mi < matchCount; mi++) {
-      const isCompleted = round <= completedRounds;
-      const isActive = round === completedRounds + 1;
-
-      let p1: TournamentPlayer | null = null;
-      let p2: TournamentPlayer | null = null;
-
-      if (round === 1) {
-        p1 = pairs[mi][0];
-        p2 = pairs[mi][1];
-      } else {
-        // Winners from previous round
-        const prev1 = prevRoundMatches[mi * 2];
-        const prev2 = prevRoundMatches[mi * 2 + 1];
-        p1 = prev1?.winner ?? null;
-        p2 = prev2?.winner ?? null;
-      }
-
-      // Simulate winners for completed rounds (higher seed wins)
-      const winner: TournamentPlayer | null = isCompleted && p1 && p2
-        ? (p1.seed < p2.seed ? p1 : p2)
-        : null;
-
-      roundMatches.push({
-        id: `r${round}m${mi}`,
-        round,
-        matchIndex: mi,
-        player1: p1,
-        player2: p2,
-        winner,
-        status: isCompleted ? 'completed' : isActive ? 'active' : 'pending',
-        gameId: isCompleted || isActive ? `game_r${round}_${mi}` : undefined,
-        scheduledAt: Date.now() + round * 3_600_000,
+  // Rounds 2..rounds: empty Pending slots
+  for (let r = 2; r <= rounds; r++) {
+    const matchesInRound = size / Math.pow(2, r);
+    for (let i = 0; i < matchesInRound; i++) {
+      matches.push({
+        id: `m-${matchIdCounter}`,
+        matchId: matchIdCounter++,
+        round: r,
+        matchIndex: i,
+        player1: null,
+        player2: null,
+        winner: null,
+        gameId: 0,
+        status: 'pending',
       });
     }
-
-    matches.push(...roundMatches);
-    prevRoundMatches = roundMatches;
   }
 
   return matches;
 }
 
-const MOCK_TOURNAMENTS: Tournament[] = [
-  {
-    id: 'trn_001',
-    name: 'Campionatul de Primăvară',
-    status: 'active',
-    prizePool: '4.0',
-    entryFee: '0.5',
-    maxPlayers: 8,
-    registeredPlayers: PLAYERS_8,
-    bracket: buildBracket(PLAYERS_8, 1),   // R1 done, R2 active
-    startTime: Date.now() - 3_600_000,
-    createdBy: makeAddr('owner'),
-    description: 'Primul turneu oficial MetaShipX. 8 jucători, bracket single elimination. Premiu: 4 EGLD.',
-    rounds: 3,
-  },
-  {
-    id: 'trn_002',
-    name: 'Liga Amiralilor — Ediția I',
-    status: 'registration',
-    prizePool: '8.0',
-    entryFee: '0.5',
-    maxPlayers: 16,
-    registeredPlayers: PLAYERS_16.slice(0, 9),  // 9/16 înregistrați
-    bracket: buildBracket(PLAYERS_16, 0),
-    startTime: Date.now() + 24 * 3_600_000,
-    createdBy: makeAddr('owner'),
-    description: 'Turneu de 16 jucători. Bracket generat automat după completarea locurilor. Premiu top 3.',
-    rounds: 4,
-  },
-  {
-    id: 'trn_003',
-    name: 'Bătălia Devnet',
-    status: 'completed',
-    prizePool: '2.0',
-    entryFee: '0.25',
-    maxPlayers: 8,
-    registeredPlayers: PLAYERS_8,
-    bracket: buildBracket(PLAYERS_8, 3),  // all rounds completed
-    startTime: Date.now() - 86_400_000 * 3,
-    endTime: Date.now() - 86_400_000,
-    createdBy: makeAddr('owner'),
-    description: 'Turneul de test pe devnet. Toate meciurile finalizate.',
-    rounds: 3,
-  },
-];
-
-export async function fetchTournaments(): Promise<Tournament[]> {
-  // Real implementation: query BATTLESHIP_CONTRACT_ADDRESS for tournament list
-  await new Promise(r => setTimeout(r, 300));
-  return MOCK_TOURNAMENTS;
+function nextPow2(n: number): number {
+  let p = 1;
+  while (p < n) p <<= 1;
+  return p;
 }
 
-export async function fetchTournament(id: string): Promise<Tournament | null> {
-  await new Promise(r => setTimeout(r, 200));
-  return MOCK_TOURNAMENTS.find(t => t.id === id) ?? null;
+// ── Read: fetch tournament list ────────────────────────────────────────────
+
+export async function fetchTournamentCount(): Promise<number> {
+  const contract = getTournamentContract();
+  const query = contract.createQuery({ func: new ContractFunction('getTournamentCount') });
+  const response = await provider.queryContract(query);
+  const [count] = resultsParser.parseUntypedQueryResponse(response).values;
+  return count ? parseInt(count.toString(), 10) : 0;
 }
 
-export async function registerForTournament(_tournamentId: string, _playerAddress: string): Promise<void> {
-  // Real: sendTransaction to contract registerForTournament endpoint
-  await new Promise(r => setTimeout(r, 500));
+export async function fetchTournament(id: number): Promise<Tournament | null> {
+  try {
+    const contract = getTournamentContract();
+
+    // Fetch info
+    const infoQuery = contract.createQuery({
+      func: new ContractFunction('getTournamentInfo'),
+      args: [{ type: 'u64', value: id }],
+    });
+    const infoRes = await provider.queryContract(infoQuery);
+    const [raw] = resultsParser.parseUntypedQueryResponse(infoRes).values;
+    if (!raw) return null;
+
+    // Fetch players
+    const playersQuery = contract.createQuery({
+      func: new ContractFunction('getPlayers'),
+      args: [{ type: 'u64', value: id }],
+    });
+    const playersRes = await provider.queryContract(playersQuery);
+    const playerValues = resultsParser.parseUntypedQueryResponse(playersRes).values;
+
+    const players: TournamentPlayer[] = playerValues.map((v: any) => ({
+      address: v.address?.toString() ?? '',
+      seed: Number(v.seed ?? 0),
+      wins: Number(v.wins ?? 0),
+      eliminated: Boolean(v.eliminated),
+    }));
+
+    // Fetch bracket
+    const bracketQuery = contract.createQuery({
+      func: new ContractFunction('getFullBracket'),
+      args: [{ type: 'u64', value: id }],
+    });
+    const bracketRes = await provider.queryContract(bracketQuery);
+    const bracketValues = resultsParser.parseUntypedQueryResponse(bracketRes).values;
+
+    const playerBySeed = Object.fromEntries(players.map(p => [p.seed, p]));
+
+    const bracket: BracketMatch[] = bracketValues.map((v: any) => {
+      const s1 = Number(v.player1_seed ?? 0);
+      const s2 = Number(v.player2_seed ?? 0);
+      const ws = Number(v.winner_seed ?? 0);
+      return {
+        id: `m-${v.match_id}`,
+        matchId: Number(v.match_id),
+        round: Number(v.round),
+        matchIndex: Number(v.match_index),
+        player1: s1 > 0 ? (playerBySeed[s1] ?? null) : null,
+        player2: s2 > 0 ? (playerBySeed[s2] ?? null) : null,
+        winner: ws > 0 ? (playerBySeed[ws] ?? null) : null,
+        gameId: Number(v.game_id ?? 0),
+        status: mapMatchStatus(Number(v.status ?? 0)),
+      };
+    });
+
+    const info: any = raw;
+    const maxPlayers = Number(info.max_players ?? 0);
+    const rounds = Math.log2(nextPow2(maxPlayers));
+
+    return {
+      id: String(id),
+      name: info.name?.toString() ?? `Tournament #${id}`,
+      description: `Single-elimination · ${maxPlayers} jucători · ${(Number(info.entry_fee ?? 0) / 1e18).toFixed(3)} EGLD intrare`,
+      entryFee: (Number(info.entry_fee ?? 0) / 1e18).toFixed(3),
+      prizePool: (Number(info.prize_pool ?? 0) / 1e18).toFixed(3),
+      maxPlayers,
+      registeredPlayers: players,
+      bracket,
+      rounds,
+      status: mapStatus(Number(info.status ?? 0)),
+      startTime: Number(info.start_time ?? 0) * 1000,
+      winner: info.winner?.toString() || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchAllTournaments(): Promise<Tournament[]> {
+  const count = await fetchTournamentCount();
+  const results = await Promise.all(
+    Array.from({ length: count }, (_, i) => fetchTournament(i + 1))
+  );
+  return results.filter(Boolean) as Tournament[];
+}
+
+// ── Write: register ────────────────────────────────────────────────────────
+
+export async function registerForTournament(
+  tournamentId: string,
+  callerAddress: string,
+  entryFeeEgld: string,
+): Promise<void> {
+  const contract = getTournamentContract();
+  const tx = contract.methods
+    .register([parseInt(tournamentId)])
+    .withValue(entryFeeEgld)
+    .withGasLimit(10_000_000)
+    .withChainID('D') // devnet; change to '1' for mainnet
+    .buildTransaction();
+
+  await sendTransactions({
+    transactions: [tx],
+    transactionsDisplayInfo: { processingMessage: 'Înregistrare turneu…', errorMessage: 'Eroare', successMessage: 'Înregistrat!' },
+  });
 }
