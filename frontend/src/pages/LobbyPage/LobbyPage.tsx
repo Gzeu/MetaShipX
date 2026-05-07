@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
 import { battleshipService } from '../../services/battleship.service';
@@ -7,7 +7,7 @@ import './lobby-page.css';
 interface OpenGame {
   gameId: number;
   creator: string;
-  bet: string; // raw EGLD in denominată
+  bet: string;
 }
 
 export const LobbyPage: React.FC = () => {
@@ -19,25 +19,27 @@ export const LobbyPage: React.FC = () => {
   const [loading, setLoading]     = useState(false);
   const [creating, setCreating]   = useState(false);
   const [joining, setJoining]     = useState<number | null>(null);
-
-  // Create game modal
   const [showCreate, setShowCreate] = useState(false);
   const [betInput, setBetInput]     = useState('0.1');
-
-  // Join by ID
   const [joinIdInput, setJoinIdInput] = useState('');
+
+  // ─── Fix: use a ref so refresh() always reads the *latest* myGames
+  // without adding it to the dependency array (which would cause an infinite loop:
+  // refresh → setMyGames → myGames changes → refresh recreated → useEffect fires again)
+  const myGamesRef = useRef<number[]>([]);
+  useEffect(() => { myGamesRef.current = myGames; }, [myGames]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
+      let latestIds = myGamesRef.current;
       if (address) {
-        const ids = await battleshipService.getPlayerGames(address);
-        setMyGames(ids);
+        latestIds = await battleshipService.getPlayerGames(address);
+        setMyGames(latestIds);
+        myGamesRef.current = latestIds;
       }
-      // In production: query an indexer or SC event feed for open games.
-      // For now we load the caller's games and show those waiting.
       const games: OpenGame[] = [];
-      for (const id of myGames.slice(0, 20)) {
+      for (const id of latestIds.slice(0, 20)) {
         try {
           const state = await battleshipService.getGameState(id);
           if (state.phase === 'WaitingForOpponent') {
@@ -49,9 +51,9 @@ export const LobbyPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [address, myGames]);
+  }, [address]); // address is the only real dep now — myGames is read via ref
 
-  useEffect(() => { refresh(); }, [address]); // eslint-disable-line
+  useEffect(() => { refresh(); }, [address]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCreate = async () => {
     if (!address) return;
@@ -62,7 +64,7 @@ export const LobbyPage: React.FC = () => {
       setShowCreate(false);
       await refresh();
     } catch (e: any) {
-      alert(`Eroare: ${e?.message}`);
+      alert(`Error: ${e?.message}`);
     } finally {
       setCreating(false);
     }
@@ -75,13 +77,13 @@ export const LobbyPage: React.FC = () => {
       await battleshipService.joinGame(gameId, bet);
       navigate(`/game/${gameId}`);
     } catch (e: any) {
-      alert(`Eroare join: ${e?.message}`);
+      alert(`Join error: ${e?.message}`);
     } finally {
       setJoining(null);
     }
   };
 
-  const handleJoinById = async () => {
+  const handleJoinById = () => {
     const id = parseInt(joinIdInput);
     if (!id) return;
     navigate(`/game/${id}`);
@@ -92,99 +94,86 @@ export const LobbyPage: React.FC = () => {
 
   return (
     <div className="lobby">
-      {/* ── Header ── */}
       <header className="lobby__header">
         <div>
           <h1 className="lobby__title">⚓ Battleship Lobby</h1>
-          <p className="lobby__subtitle">Gsescă un adversar sau creează un nou joc</p>
+          <p className="lobby__subtitle">Find an opponent or create a new game</p>
         </div>
         <div className="lobby__actions">
           <div className="join-by-id">
             <input
               className="join-id-input"
-              placeholder="ID joc..."
+              placeholder="Game ID..."
               value={joinIdInput}
               onChange={e => setJoinIdInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleJoinById()}
             />
-            <button className="btn btn--ghost" onClick={handleJoinById}>
-              Intră
-            </button>
+            <button className="btn btn--ghost" onClick={handleJoinById}>Join</button>
           </div>
           {address && (
             <button className="btn btn--primary" onClick={() => setShowCreate(true)}>
-              + Joc Nou
+              + New Game
             </button>
           )}
         </div>
       </header>
 
-      {/* ── Stats bar ── */}
       <div className="lobby__stats">
         <div className="stat-chip">
           <span className="stat-chip__value">{openGames.length}</span>
-          <span className="stat-chip__label">Jocuri deschise</span>
+          <span className="stat-chip__label">Open games</span>
         </div>
         <div className="stat-chip">
           <span className="stat-chip__value">{myGames.length}</span>
-          <span className="stat-chip__label">Jocurile mele</span>
+          <span className="stat-chip__label">My games</span>
         </div>
         <button
           className="refresh-btn"
           onClick={refresh}
           disabled={loading}
-          title="Refrsează"
+          title="Refresh"
         >
           {loading ? '⏳' : '↺'}
         </button>
       </div>
 
-      {/* ── My games row ── */}
       {myGames.length > 0 && (
         <section className="lobby__section">
-          <h2 className="lobby__section-title">Jocurile Mele</h2>
+          <h2 className="lobby__section-title">My Games</h2>
           <div className="games-row">
             {myGames.slice(0, 10).map(id => (
-              <button
-                key={id}
-                className="game-chip"
-                onClick={() => navigate(`/game/${id}`)}
-              >
-                #{id}
-              </button>
+              <button key={id} className="game-chip" onClick={() => navigate(`/game/${id}`)}>#{id}</button>
             ))}
           </div>
         </section>
       )}
 
-      {/* ── Open games table ── */}
       <section className="lobby__section lobby__section--main">
-        <h2 className="lobby__section-title">Jocuri Deschise</h2>
-
+        <h2 className="lobby__section-title">Open Games</h2>
         {loading && openGames.length === 0 ? (
           <div className="lobby__empty">
             <div className="loading-spinner" />
-            <p>Se încarcă...</p>
+            <p>Loading...</p>
           </div>
         ) : openGames.length === 0 ? (
           <div className="lobby__empty">
             <div className="empty-icon">🌊</div>
-            <p>Niciun joc deschis în momentul acesta.</p>
-            <p className="empty-hint">Fii primul — creează un joc!</p>
+            <p>No open games right now.</p>
+            <p className="empty-hint">Be first — create a game!</p>
           </div>
         ) : (
           <div className="games-table">
             <div className="games-table__header">
-              <span>Joc #</span>
+              <span>Game #</span>
               <span>Creator</span>
-              <span>Pariu</span>
+              <span>Bet</span>
               <span></span>
             </div>
             {openGames.map(g => (
               <div key={g.gameId} className="games-table__row">
                 <span className="game-id">#{g.gameId}</span>
                 <span className="game-creator">
-                  {g.creator === address ? '👤 Tu' : shortAddr(g.creator)}
+                  {g.creator === address ? '👤 You' : shortAddr(g.creator)}
                 </span>
                 <span className="game-bet">💰 {egld(g.bet)} EGLD</span>
                 <span className="game-actions">
@@ -192,16 +181,14 @@ export const LobbyPage: React.FC = () => {
                     <button
                       className="btn btn--ghost btn--sm"
                       onClick={() => navigate(`/game/${g.gameId}`)}
-                    >
-                      Vezi
-                    </button>
+                    >View</button>
                   ) : (
                     <button
                       className="btn btn--primary btn--sm"
                       disabled={joining === g.gameId}
                       onClick={() => handleJoin(g.gameId, g.bet)}
                     >
-                      {joining === g.gameId ? 'Se intră...' : 'Intră →'}
+                      {joining === g.gameId ? 'Joining...' : 'Join →'}
                     </button>
                   )}
                 </span>
@@ -211,29 +198,19 @@ export const LobbyPage: React.FC = () => {
         )}
       </section>
 
-      {/* ── Quick links ── */}
       <section className="lobby__quick-links">
-        <button className="quick-link" onClick={() => navigate('/tournaments')}>
-          🏆 Turnee
-        </button>
-        <button className="quick-link" onClick={() => navigate('/staking')}>
-          💰 Staking
-        </button>
-        <button className="quick-link" onClick={() => navigate('/marketplace')}>
-          🛒 Nave NFT
-        </button>
-        <button className="quick-link" onClick={() => navigate('/leaderboard')}>
-          🏅 Clasament
-        </button>
+        <button className="quick-link" onClick={() => navigate('/tournaments')}>🏆 Tournaments</button>
+        <button className="quick-link" onClick={() => navigate('/staking')}>💰 Staking</button>
+        <button className="quick-link" onClick={() => navigate('/marketplace')}>🛒 Ship NFTs</button>
+        <button className="quick-link" onClick={() => navigate('/leaderboard')}>🏅 Leaderboard</button>
       </section>
 
-      {/* ── Create game modal ── */}
       {showCreate && (
         <div className="modal-overlay" onClick={() => setShowCreate(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-            <h2 className="modal__title">⚓ Creează Joc Nou</h2>
+            <h2 className="modal__title">⚓ Create New Game</h2>
             <label className="modal__label">
-              Pariu (EGLD)
+              Bet (EGLD)
               <input
                 className="modal__input"
                 type="number"
@@ -244,19 +221,16 @@ export const LobbyPage: React.FC = () => {
               />
             </label>
             <p className="modal__hint">
-              Adversarul trebuie să plătească același pariu pentru a intra.
-              Câștigătorul ia 2× pariul.
+              Opponent must match your bet. Winner takes 2×.
             </p>
             <div className="modal__footer">
-              <button className="btn btn--ghost" onClick={() => setShowCreate(false)}>
-                Anulează
-              </button>
+              <button className="btn btn--ghost" onClick={() => setShowCreate(false)}>Cancel</button>
               <button
                 className="btn btn--primary"
                 disabled={creating || !betInput}
                 onClick={handleCreate}
               >
-                {creating ? 'Se trimite...' : 'Creează →'}
+                {creating ? 'Sending...' : 'Create →'}
               </button>
             </div>
           </div>

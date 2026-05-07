@@ -6,7 +6,7 @@ export const NETWORK_CONFIG = {
 };
 
 export const environment = {
-  id: 'devnet' as 'devnet' | 'testnet' | 'mainnet',
+  id: (import.meta.env.VITE_NETWORK ?? 'devnet') as 'devnet' | 'testnet' | 'mainnet',
   walletConnectV2ProjectId: import.meta.env.VITE_WALLET_CONNECT_V2_PROJECT_ID ?? '',
 };
 
@@ -22,4 +22,26 @@ export const STAKING_CONTRACT_ADDRESS =
   import.meta.env.VITE_STAKING_ADDRESS ??
   'erd1qqqqqqqqqqqqqpgq000000000000000000000000000000000000000002';
 
+export const TOURNAMENT_CONTRACT_ADDRESS =
+  import.meta.env.VITE_TOURNAMENT_ADDRESS ??
+  'erd1qqqqqqqqqqqqqpgq000000000000000000000000000000000000000003';
+
 export const MINT_PRICE_EGLD = '0.05';
+
+// ─── Chain-specific overrides ─────────────────────────────────────────────────
+const CHAIN_CONFIGS: Record<string, Partial<typeof NETWORK_CONFIG>> = {
+  testnet: {
+    chainId: 'T',
+    apiUrl: 'https://testnet-api.multiversx.com',
+    explorerUrl: 'https://testnet-explorer.multiversx.com',
+  },
+  mainnet: {
+    chainId: '1',
+    apiUrl: 'https://api.multiversx.com',
+    explorerUrl: 'https://explorer.multiversx.com',
+  },
+};
+
+if (CHAIN_CONFIGS[environment.id]) {
+  Object.assign(NETWORK_CONFIG, CHAIN_CONFIGS[environment.id]);
+}
