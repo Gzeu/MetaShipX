@@ -1,15 +1,20 @@
+function requireEnv(key: string, fallback?: string): string {
+  const val = process.env[key] ?? fallback;
+  if (val === undefined) throw new Error(`Missing required env var: ${key}`);
+  return val;
+}
+
 export const config = {
-  PORT: parseInt(process.env.PORT ?? '4000', 10),
-  NODE_ENV: (process.env.NODE_ENV ?? 'development') as 'development' | 'production',
-  CORS_ORIGIN: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+  nodeEnv: process.env.NODE_ENV ?? 'development',
+  port: parseInt(process.env.PORT ?? '3001', 10),
+  corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+  cacheTtl: parseInt(process.env.CACHE_TTL ?? '30', 10),
 
-  // MultiversX
-  MX_API_URL: process.env.MX_API_URL ?? 'https://devnet-api.multiversx.com',
-  BATTLESHIP_CONTRACT: process.env.BATTLESHIP_CONTRACT ?? 'erd1qqqqqqqqqqqqqpgqd9rvv2n378e27esnhcpgn6l76pv3nf8nvs9sn4600g',
-  NFT_CONTRACT: process.env.NFT_CONTRACT ?? 'erd1qqqqqqqqqqqqqpgqe9rvv2n378e27esnhcpgn6l76pv3nf8nvs9sn4600g',
-  STAKING_CONTRACT: process.env.STAKING_CONTRACT ?? 'erd1qqqqqqqqqqqqqpgqf9rvv2n378e27esnhcpgn6l76pv3nf8nvs9sn4600g',
+  mxApiUrl: process.env.MX_API_URL ?? 'https://devnet-api.multiversx.com',
+  mxChain: process.env.MX_CHAIN ?? 'D',
 
-  // Cache TTL in ms
-  LEADERBOARD_CACHE_TTL: parseInt(process.env.LEADERBOARD_CACHE_TTL ?? '30000', 10),
-  STATS_CACHE_TTL: parseInt(process.env.STATS_CACHE_TTL ?? '60000', 10),
+  battleshipContract: process.env.BATTLESHIP_CONTRACT ?? '',
+  nftContract: process.env.NFT_CONTRACT ?? '',
+  stakingContract: process.env.STAKING_CONTRACT ?? '',
+  tournamentContract: process.env.TOURNAMENT_CONTRACT ?? '',
 } as const;

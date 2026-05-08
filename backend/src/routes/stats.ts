@@ -1,87 +1,66 @@
 import { Router, Request, Response } from 'express';
-import { ProxyNetworkProvider } from '@multiversx/sdk-network-providers';
-import { SmartContract, ContractFunction, Address, BigUIntValue } from '@multiversx/sdk-core';
 import { config } from '../config';
+import { vmQuery, parseU64, parseBigUint } from '../services/mx.service';
+import { validateAddress } from '../middleware/validate';
+import { defaultLimiter } from '../middleware/rateLimiter';
 import type { GlobalStats, PlayerStats, ApiResponse } from '../types';
 
-export const statsRouter = Router();
-
-interface StatsCache<T> { data: T; ts: number; }
-const globalCache: StatsCache<GlobalStats> | null = null;
-const playerCache = new Map<string, StatsCache<PlayerStats>>();
-
-function provider(): ProxyNetworkProvider {
-  return new ProxyNetworkProvider(config.MX_API_URL, { timeout: 10_000 });
-}
-
-async function queryView(contractAddr: string, funcName: string, args: unknown[] = []): Promise<string[]> {
-  const p = provider();
-  const contract = new SmartContract({ address: new Address(contractAddr) });
-  const query = contract.createQuery({ func: new ContractFunction(funcName), args: args as never[] });
-  const response = await p.queryContract(query);
-  return response.returnData as string[];
+const router = Router();
+interface Cache<T> { data: T; ts: number; }
+const _cache = new Map<string, Cache<unknown>>();
+const TTL = config.cacheTtl * 1000;
+function cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const hit = _cache.get(key);
+  if (hit && Date.now() - hit.ts < TTL) return Promise.resolve(hit.data as T);
+  return fn().then(data => { _cache.set(key, { data, ts: Date.now() }); return data; });
 }
 
 // GET /api/stats/global
-statsRouter.get('/global', async (_req: Request, res: Response) => {
-  const now = Date.now();
-  if (globalCache && now - globalCache.ts < config.STATS_CACHE_TTL) {
-    res.json({ success: true, data: globalCache.data, timestamp: now, cached: true });
-    return;
-  }
+router.get('/global', defaultLimiter, async (_req: Request, res: Response) => {
   try {
-    const raw = await queryView(config.BATTLESHIP_CONTRACT, 'getGlobalStats');
-    const totalGames  = raw[0] ? parseInt(Buffer.from(raw[0], 'base64').toString('hex'), 16) : 0;
-    const totalPlayers = raw[1] ? parseInt(Buffer.from(raw[1], 'base64').toString('hex'), 16) : 0;
-    const volumeHex = raw[2] ? Buffer.from(raw[2], 'base64').toString('hex') : '0';
-    const data: GlobalStats = {
-      totalGames,
-      totalPlayers,
-      totalVolume: BigInt('0x' + volumeHex).toString(),
-      activePlayers24h: totalPlayers > 0 ? Math.floor(totalPlayers * 0.15) : 0,
-    };
-    (statsRouter as unknown as { _globalCache: typeof globalCache })._globalCache = { data, ts: now };
-    res.json({ success: true, data, timestamp: now, cached: false } satisfies ApiResponse<GlobalStats>);
-  } catch (err) {
-    // Return zeroed stats rather than 502 during devnet down
-    const fallback: GlobalStats = { totalGames: 0, totalPlayers: 0, totalVolume: '0', activePlayers24h: 0 };
-    res.json({ success: true, data: fallback, timestamp: now, cached: false });
+    const stats = await cached('stats:global', async () => {
+      const [gamesRaw, playersRaw, volumeRaw] = await Promise.all([
+        vmQuery(config.battleshipContract, 'getTotalGames'),
+        vmQuery(config.battleshipContract, 'getTotalPlayers'),
+        vmQuery(config.battleshipContract, 'getTotalVolume'),
+      ]);
+      return {
+        totalGames: parseU64(gamesRaw[0] ?? ''),
+        totalPlayers: parseU64(playersRaw[0] ?? ''),
+        totalVolumeEgld: parseBigUint(volumeRaw[0] ?? ''),
+      } satisfies GlobalStats;
+    });
+    res.json({ data: stats, success: true } satisfies ApiResponse<GlobalStats>);
+  } catch {
+    res.status(500).json({ success: false, error: 'Failed to fetch global stats' });
   }
 });
 
 // GET /api/stats/:address
-statsRouter.get('/:address', async (req: Request, res: Response) => {
-  const { address } = req.params;
-  const now = Date.now();
-  const cached = playerCache.get(address);
-  if (cached && now - cached.ts < config.STATS_CACHE_TTL) {
-    res.json({ success: true, data: cached.data, timestamp: now, cached: true });
-    return;
-  }
+router.get('/:address', defaultLimiter, validateAddress, async (req: Request, res: Response) => {
   try {
-    const addrObj = new Address(address);
-    const raw = await queryView(config.BATTLESHIP_CONTRACT, 'getPlayerStats', [new BigUIntValue(BigInt(0))]);
-    const wins   = raw[0] ? parseInt(Buffer.from(raw[0], 'base64').toString('hex'), 16) : 0;
-    const losses = raw[1] ? parseInt(Buffer.from(raw[1], 'base64').toString('hex'), 16) : 0;
-    const wageredHex = raw[2] ? Buffer.from(raw[2], 'base64').toString('hex') : '0';
-    const earnedHex  = raw[3] ? Buffer.from(raw[3], 'base64').toString('hex') : '0';
-    const total = wins + losses;
-    const data: PlayerStats = {
-      address: addrObj.toBech32(),
-      wins,
-      losses,
-      totalGames: total,
-      winRate: total > 0 ? Math.round((wins / total) * 100) : 0,
-      totalWagered: BigInt('0x' + wageredHex).toString(),
-      totalEarned: BigInt('0x' + earnedHex).toString(),
-      rank: null,
-      shipsMinted: 0,
-      stakingBalance: '0',
-    };
-    playerCache.set(address, { data, ts: now });
-    res.json({ success: true, data, timestamp: now, cached: false } satisfies ApiResponse<PlayerStats>);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Failed to fetch player stats';
-    res.status(502).json({ success: false, error: msg, statusCode: 502 });
+    const { address } = req.params;
+    const stats = await cached(`stats:${address}`, async () => {
+      const raw = await vmQuery(
+        config.battleshipContract,
+        'getPlayerStats',
+        [Buffer.from(address, 'ascii').toString('hex')],
+      );
+      return {
+        address,
+        wins: parseU64(raw[0] ?? ''),
+        losses: parseU64(raw[1] ?? ''),
+        totalGames: parseU64(raw[2] ?? ''),
+        totalEarned: parseBigUint(raw[3] ?? ''),
+        winRate: parseU64(raw[0] ?? '') > 0
+          ? Math.round((parseU64(raw[0] ?? '') / Math.max(1, parseU64(raw[2] ?? ''))) * 100)
+          : 0,
+      } satisfies PlayerStats;
+    });
+    res.json({ data: stats, success: true } satisfies ApiResponse<PlayerStats>);
+  } catch {
+    res.status(500).json({ success: false, error: 'Failed to fetch player stats' });
   }
 });
+
+export default router;

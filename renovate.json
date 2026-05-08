@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:base"],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "packageRules": [
+    {
+      "matchPackagePatterns": ["@multiversx"],
+      "groupName": "MultiversX SDK",
+      "schedule": ["on monday"]
+    },
+    {
+      "matchDepTypes": ["devDependencies"],
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<6.0.0"
+    }
+  ],
+  "ignorePaths": ["contracts/**", "wallet/**"]
+}

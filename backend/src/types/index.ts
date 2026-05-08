@@ -3,43 +3,13 @@ export interface LeaderboardEntry {
   address: string;
   wins: number;
   losses: number;
-  totalGames: number;
-  winRate: number;
-  totalWagered: string;
-  totalEarned: string;
-}
-
-export type TournamentStatus = 'upcoming' | 'registration' | 'active' | 'finished';
-
-export interface Tournament {
-  id: string;
-  name: string;
-  status: TournamentStatus;
-  entryFee: string;       // EGLD denomination string
-  prizePool: string;      // EGLD denomination string
-  maxPlayers: number;
-  currentPlayers: number;
-  players: string[];      // bech32 addresses
-  startTime: number;      // unix timestamp ms
-  endTime: number | null;
-  winner: string | null;
-  bracket: BracketMatch[];
-}
-
-export interface BracketMatch {
-  matchId: string;
-  round: number;
-  player1: string | null;
-  player2: string | null;
-  winner: string | null;
-  gameId: string | null;
+  totalEarned: string; // wei string
 }
 
 export interface GlobalStats {
   totalGames: number;
   totalPlayers: number;
-  totalVolume: string;    // EGLD denomination
-  activePlayers24h: number;
+  totalVolumeEgld: string;
 }
 
 export interface PlayerStats {
@@ -47,23 +17,35 @@ export interface PlayerStats {
   wins: number;
   losses: number;
   totalGames: number;
-  winRate: number;
-  totalWagered: string;
   totalEarned: string;
-  rank: number | null;
-  shipsMinted: number;
-  stakingBalance: string;
+  winRate: number; // 0-100
+}
+
+export interface Tournament {
+  id: number;
+  name: string;
+  entryFee: string;    // wei string
+  prizePool: string;   // wei string
+  maxPlayers: number;
+  currentPlayers: number;
+  status: 'Open' | 'InProgress' | 'Finished' | 'Cancelled';
+  winner: string | null;
 }
 
 export interface ApiResponse<T> {
+  data?: T;
   success: boolean;
-  data: T;
-  timestamp: number;
-  cached?: boolean;
+  error?: string;
+  meta?: {
+    page?: number;
+    total?: number;
+    cached?: boolean;
+  };
 }
 
-export interface ApiError {
-  success: false;
-  error: string;
-  statusCode: number;
+export interface WsMessage {
+  type: 'attack' | 'game_over' | 'player_joined' | 'turn_change' | 'connected' | 'error';
+  gameId: string;
+  payload?: unknown;
+  timestamp?: number;
 }
