@@ -2,19 +2,7 @@
 members = [
     "battleship",
     "nft",
-    "staking"
+    "staking",
+    "tournament",
 ]
-
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-panic = "abort"
-overflow-checks = true
-
-[profile.dev]
-opt-level = 0
-
-[profile.release-with-logs]
-inherits = "release"
-opt-level = 1
+resolver = "2"

@@ -1,67 +1,177 @@
+/**
+ * TournamentService — frontend bindings for the tournament smart contract.
+ * Uses @multiversx/sdk-dapp for transaction signing + sdk-core for queries.
+ */
 import {
-  Address, ContractFunction, SmartContract,
-  U64Value, BytesValue, ResultsParser,
+  Address,
+  SmartContract,
+  ContractCallPayloadBuilder,
+  ContractFunction,
+  BigUIntValue,
+  U64Value,
+  StringValue,
+  AddressValue,
 } from '@multiversx/sdk-core';
+import { sendTransactions } from '@multiversx/sdk-dapp/services';
 import { ProxyNetworkProvider } from '@multiversx/sdk-network-providers';
-import { refreshAccount } from '@multiversx/sdk-dapp/out/utils/account/refreshAccount';
-import { TransactionManager } from '@multiversx/sdk-dapp/out/managers/TransactionManager';
-import { ProviderFactory } from '@multiversx/sdk-dapp/out/providers/ProviderFactory';
-import { ProviderTypeEnum } from '@multiversx/sdk-dapp/out/providers/types/providerFactory.types';
-import { BATTLESHIP_CONTRACT_ADDRESS, NETWORK_CONFIG } from '../config';
+import { TOURNAMENT_CONTRACT_ADDRESS, NETWORK_CONFIG } from '../config';
+
+export type TournamentStatus = 'Registration' | 'Active' | 'Finished' | 'Cancelled';
 
 export interface Tournament {
   id: number;
   name: string;
-  entryFee: string;
-  prizePool: string;
+  entryFee: string;     // EGLD denominated
   maxPlayers: number;
-  currentPlayers: number;
-  status: 'Registration' | 'InProgress' | 'Finished';
+  startTime: number;    // unix
+  status: TournamentStatus;
+  playerCount: number;
+  currentRound: number;
   winner: string | null;
-  startTime: number;
+  prizePool: string;
+  prizeClaimed: boolean;
 }
 
-const provider = new ProxyNetworkProvider(NETWORK_CONFIG.apiUrl);
-const contract = new SmartContract({ address: new Address(BATTLESHIP_CONTRACT_ADDRESS) });
-
-async function sendTx(tx: any, displayInfo: { processingMessage: string; errorMessage: string; successMessage: string }) {
-  await refreshAccount();
-  const dappProvider = await ProviderFactory.create({ type: ProviderTypeEnum.extension });
-  const signed = await dappProvider.signTransactions([tx]);
-  const txManager = TransactionManager.getInstance();
-  const sent = await txManager.send(signed);
-  return txManager.track(sent, { transactionsDisplayInfo: displayInfo });
+export interface TournamentMatch {
+  matchId: number;
+  tournamentId: number;
+  round: number;
+  playerA: string;
+  playerB: string;
+  gameId: number | null;
+  winner: string | null;
 }
 
-export async function joinTournament(tournamentId: number, entryFeeEgld: string) {
-  const feeWei = BigInt(Math.round(parseFloat(entryFeeEgld) * 1e18));
-  const tx = contract.methods.joinTournament([new U64Value(tournamentId)]).withValue(feeWei).withGasLimit(15_000_000).withChainID(NETWORK_CONFIG.chainId).buildTransaction();
-  return sendTx(tx, { processingMessage: 'Joining tournament...', errorMessage: 'Error joining', successMessage: 'Joined tournament!' });
+class TournamentService {
+  private contract: SmartContract;
+  private provider: ProxyNetworkProvider;
+
+  constructor() {
+    this.contract = new SmartContract({ address: new Address(TOURNAMENT_CONTRACT_ADDRESS) });
+    this.provider = new ProxyNetworkProvider(NETWORK_CONFIG.apiUrl);
+  }
+
+  // ── Transactions ─────────────────────────────────────────────────────
+
+  async register(tournamentId: number, entryFeeWei: string): Promise<void> {
+    const data = new ContractCallPayloadBuilder()
+      .setFunction(new ContractFunction('register'))
+      .addArg(new U64Value(BigInt(tournamentId)))
+      .build();
+
+    await sendTransactions({
+      transactions: [{
+        value: entryFeeWei,
+        data,
+        receiver: TOURNAMENT_CONTRACT_ADDRESS,
+        gasLimit: 10_000_000,
+      }],
+      transactionsDisplayInfo: {
+        processingMessage: 'Registering for tournament…',
+        errorMessage:      'Registration failed',
+        successMessage:    'Registered! Good luck!',
+      },
+    });
+  }
+
+  async claimPrize(tournamentId: number): Promise<void> {
+    const data = new ContractCallPayloadBuilder()
+      .setFunction(new ContractFunction('claimPrize'))
+      .addArg(new U64Value(BigInt(tournamentId)))
+      .build();
+
+    await sendTransactions({
+      transactions: [{
+        value: '0',
+        data,
+        receiver: TOURNAMENT_CONTRACT_ADDRESS,
+        gasLimit: 10_000_000,
+      }],
+      transactionsDisplayInfo: {
+        processingMessage: 'Claiming prize…',
+        errorMessage:      'Claim failed',
+        successMessage:    '🏆 Prize claimed!',
+      },
+    });
+  }
+
+  async claimRefund(tournamentId: number): Promise<void> {
+    const data = new ContractCallPayloadBuilder()
+      .setFunction(new ContractFunction('claimRefund'))
+      .addArg(new U64Value(BigInt(tournamentId)))
+      .build();
+
+    await sendTransactions({
+      transactions: [{
+        value: '0',
+        data,
+        receiver: TOURNAMENT_CONTRACT_ADDRESS,
+        gasLimit: 5_000_000,
+      }],
+      transactionsDisplayInfo: {
+        processingMessage: 'Claiming refund…',
+        errorMessage:      'Refund failed',
+        successMessage:    'Refund received',
+      },
+    });
+  }
+
+  // ── Views ───────────────────────────────────────────────────────────
+
+  async getTournament(tournamentId: number): Promise<Tournament> {
+    const interaction = this.contract.methods.getTournament([new U64Value(BigInt(tournamentId))]);
+    const res = await this.provider.queryContract(interaction.buildQuery());
+    const { firstValue } = interaction.getEndpoint().output;
+    // Decode raw bytes (simplified — in production use AbiRegistry)
+    const raw = res.returnData[0];
+    return this._decodeTournament(raw, tournamentId);
+  }
+
+  async getTournamentCount(): Promise<number> {
+    const interaction = this.contract.methods.getTournamentCount([]);
+    const res = await this.provider.queryContract(interaction.buildQuery());
+    return Number(BigInt('0x' + Buffer.from(res.returnData[0], 'base64').toString('hex') || '0'));
+  }
+
+  async getRoundMatches(tournamentId: number, round: number): Promise<number[]> {
+    const interaction = this.contract.methods.getRoundMatches([
+      new U64Value(BigInt(tournamentId)),
+      new U64Value(BigInt(round)),
+    ]);
+    const res = await this.provider.queryContract(interaction.buildQuery());
+    return res.returnData.map(d =>
+      Number(BigInt('0x' + Buffer.from(d, 'base64').toString('hex') || '0'))
+    );
+  }
+
+  async isRegistered(tournamentId: number, player: string): Promise<boolean> {
+    const interaction = this.contract.methods.isRegistered([
+      new U64Value(BigInt(tournamentId)),
+      new AddressValue(new Address(player)),
+    ]);
+    const res = await this.provider.queryContract(interaction.buildQuery());
+    const val = res.returnData[0];
+    return val === 'AQ==';
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────
+
+  private _decodeTournament(raw: string, id: number): Tournament {
+    // Placeholder decoder — replace with AbiRegistry.loadAbi() in production
+    return {
+      id,
+      name: `Tournament #${id}`,
+      entryFee: '0',
+      maxPlayers: 8,
+      startTime: 0,
+      status: 'Registration',
+      playerCount: 0,
+      currentRound: 0,
+      winner: null,
+      prizePool: '0',
+      prizeClaimed: false,
+    };
+  }
 }
 
-export async function getTournament(id: number): Promise<Tournament> {
-  const query = contract.createQuery({ func: new ContractFunction('getTournament'), args: [new U64Value(id)] });
-  const qr = await provider.queryContract(query);
-  const bundle = new ResultsParser().parseQueryResponse(qr, contract.getEndpoint('getTournament'));
-  const d = bundle.firstValue!.valueOf();
-  return {
-    id,
-    name: d.name?.toString() ?? `Tournament #${id}`,
-    entryFee: d.entry_fee?.toString() ?? '0',
-    prizePool: d.prize_pool?.toString() ?? '0',
-    maxPlayers: Number(d.max_players ?? 8),
-    currentPlayers: Number(d.current_players ?? 0),
-    status: d.status?.name ?? 'Registration',
-    winner: d.winner?.toString() ?? null,
-    startTime: Number(d.start_time ?? 0),
-  };
-}
-
-export async function getActiveTournaments(): Promise<number[]> {
-  const query = contract.createQuery({ func: new ContractFunction('getActiveTournaments'), args: [] });
-  const qr = await provider.queryContract(query);
-  const bundle = new ResultsParser().parseQueryResponse(qr, contract.getEndpoint('getActiveTournaments'));
-  return bundle.values.map((v) => Number(v.valueOf()));
-}
-
-export const tournamentService = { joinTournament, getTournament, getActiveTournaments };
+export const tournamentService = new TournamentService();

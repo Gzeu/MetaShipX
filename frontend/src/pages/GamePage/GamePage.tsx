@@ -1,317 +1,178 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useGetAccountInfo } from '@multiversx/sdk-dapp/out/react/account';
+import { useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
+import { battleshipService } from '../../services/battleship.service';
+import { useGamePolling } from '../../hooks/useGamePolling';
 import { GameBoard } from '../../components/GameBoard/GameBoard';
 import { PlacementBoard } from '../../components/PlacementBoard/PlacementBoard';
 import { GameStatus } from '../../components/GameStatus/GameStatus';
-import { TournamentBadge } from '../../components/TournamentBadge/TournamentBadge';
-import { useGame } from '../../hooks/useGame';
-import { useGamePolling } from '../../hooks/useGamePolling';
-import { battleshipService } from '../../services/battleship.service';
-import type { ShipPlacement } from '../../types/game.types';
 import './game-page.css';
 
 export const GamePage: React.FC = () => {
-  const { gameId } = useParams<{ gameId: string }>();
-  const navigate = useNavigate();
-  const { address } = useGetAccountInfo();
-  const numericGameId = Number(gameId);
+  const { gameId: gameIdStr } = useParams<{ gameId: string }>();
+  const navigate              = useNavigate();
+  const { address }           = useGetAccountInfo();
+  const gameId                = gameIdStr ? parseInt(gameIdStr) : null;
 
-  const { gameState, myBoard, opponentBoard, refreshGame, isLoading, setMyBoard, setOpponentBoard } =
-    useGame(numericGameId);
+  // ─── Real-time polling ────────────────────────────────────────────────────
+  const { gameState, status, lastUpdated, errorCount, forceRefresh } =
+    useGamePolling(gameId, address ?? '');
 
-  // Poll at phase-appropriate intervals
-  useGamePolling(refreshGame, gameState?.phase);
+  // ─── Derived state ────────────────────────────────────────────────────────
+  const isPlayerA    = gameState?.playerA?.toLowerCase() === address?.toLowerCase();
+  const isPlayerB    = gameState?.playerB?.toLowerCase() === address?.toLowerCase();
+  const isMyTurn     =
+    (isPlayerA && gameState?.phase === 'PlayerATurn') ||
+    (isPlayerB && gameState?.phase === 'PlayerBTurn');
+  const phase        = gameState?.phase ?? 'Loading';
+  const isFinished   = phase === 'Finished';
+  const isPlacement  = phase === 'PlacingShips';
+  const didWin       = isFinished && gameState?.winner?.toLowerCase() === address?.toLowerCase();
 
-  const [placements, setPlacements] = useState<ShipPlacement[]>([]);
-  const [placingShips, setPlacingShips] = useState(false);
-  const [attacking, setAttacking] = useState(false);
-  const [lastAction, setLastAction] = useState<string | null>(null);
-
-  // Derived flags
-  const isCreator  = gameState?.creator === address;
-  const isOpponent = gameState?.opponent === address;
-  const isMyTurn =
-    gameState?.phase === 'InProgress' &&
-    ((isCreator && gameState.currentTurn === 0) ||
-     (isOpponent && gameState.currentTurn === 1));
-
-  const isTournamentGame =
-    gameState?.tournamentId !== undefined && gameState.tournamentId > 0;
-
-  // Sync myBoard when ships are placed (keep local representation)
-  const syncBoardFromPlacements = useCallback((ships: ShipPlacement[]) => {
-    const board: ('empty' | 'ship')[][] = Array.from({ length: 10 }, () =>
-      Array(10).fill('empty')
-    );
-    ships.forEach((s) => {
-      for (let i = 0; i < s.length; i++) {
-        const r = s.isVertical ? s.x + i : s.x;
-        const c = s.isVertical ? s.y : s.y + i;
-        if (r < 10 && c < 10) board[r][c] = 'ship';
-      }
-    });
-    setMyBoard(board);
-  }, [setMyBoard]);
-
-  // ── Place ships ──────────────────────────────────────────────────────────
-  const handlePlaceShips = useCallback(async () => {
-    if (placements.length !== 5) {
-      setLastAction('⚠️ Place all 5 ships first!');
-      return;
-    }
-    setPlacingShips(true);
-    setLastAction(null);
+  // ─── Actions ──────────────────────────────────────────────────────────────
+  const handleAttack = useCallback(async (row: number, col: number) => {
+    if (!gameId || !isMyTurn) return;
     try {
-      syncBoardFromPlacements(placements);
-      await battleshipService.placeShips(numericGameId, placements);
-      setLastAction('✅ Ships placed! Waiting for opponent...');
-      await refreshGame();
+      await battleshipService.attack(gameId, row, col);
+      // Optimistic: poll immediately after tx
+      setTimeout(forceRefresh, 1500);
     } catch (e: any) {
-      setLastAction(`❌ Error: ${e?.message ?? 'unknown'}`);
-    } finally {
-      setPlacingShips(false);
+      alert(`Attack failed: ${e?.message}`);
     }
-  }, [numericGameId, placements, refreshGame, syncBoardFromPlacements]);
+  }, [gameId, isMyTurn, forceRefresh]);
 
-  // ── Attack ───────────────────────────────────────────────────────────────
-  const handleAttack = useCallback(
-    async (row: number, col: number) => {
-      if (!isMyTurn || attacking) return;
-      setAttacking(true);
-      setLastAction(null);
-      // Optimistic update on opponent board
-      setOpponentBoard((prev) => {
-        const next = prev.map((r) => [...r]);
-        next[row][col] = 'hit';
-        return next;
-      });
-      try {
-        await battleshipService.attack(numericGameId, row, col);
-        setLastAction('💥 Attack sent! Waiting for confirmation...');
-        await refreshGame();
-      } catch (e: any) {
-        // Rollback optimistic update
-        setOpponentBoard((prev) => {
-          const next = prev.map((r) => [...r]);
-          next[row][col] = 'empty';
-          return next;
-        });
-        setLastAction(`❌ Attack failed: ${e?.message ?? 'unknown'}`);
-      } finally {
-        setAttacking(false);
-      }
-    },
-    [numericGameId, isMyTurn, attacking, refreshGame, setOpponentBoard]
-  );
-
-  // ── Withdraw ─────────────────────────────────────────────────────────────
-  const handleWithdraw = useCallback(async () => {
+  const handlePlaceShips = useCallback(async (positions: number[]) => {
+    if (!gameId) return;
     try {
-      await battleshipService.withdraw(numericGameId);
+      await battleshipService.placeShips(gameId, positions);
+      setTimeout(forceRefresh, 1500);
+    } catch (e: any) {
+      alert(`Place ships failed: ${e?.message}`);
+    }
+  }, [gameId, forceRefresh]);
+
+  const handleWithdraw = useCallback(async () => {
+    if (!gameId) return;
+    if (!confirm('Withdraw and forfeit the game?')) return;
+    try {
+      await battleshipService.withdraw(gameId);
       navigate('/lobby');
     } catch (e: any) {
-      setLastAction(`❌ Withdraw failed: ${e?.message ?? 'unknown'}`);
+      alert(`Withdraw failed: ${e?.message}`);
     }
-  }, [numericGameId, navigate]);
+  }, [gameId, navigate]);
 
-  // ── Guards ───────────────────────────────────────────────────────────────
-  if (!address) {
-    return (
-      <div className="game-page game-page--auth">
-        <div className="loading-spinner" />
-        <p>Connect your wallet to play.</p>
-      </div>
-    );
+  // ─── Loading / error ─────────────────────────────────────────────────────
+  if (!gameId) {
+    return <div className="gp-error">Invalid game ID.</div>;
   }
 
-  if (isLoading && !gameState) {
+  if (status === 'idle' || (!gameState && status === 'polling')) {
     return (
-      <div className="game-page game-page--loading">
-        <div className="loading-spinner" />
-        <p>Loading game #{gameId}...</p>
+      <div className="gp-loading">
+        <div className="gp-spinner" />
+        <p>Loading game #{gameId}…</p>
       </div>
     );
   }
 
   if (!gameState) {
     return (
-      <div className="game-page game-page--error">
-        <p>Game #{gameId} not found.</p>
-        <button className="btn btn--primary" onClick={() => navigate('/lobby')}>← Back to Lobby</button>
+      <div className="gp-error">
+        <p>Could not load game #{gameId}.</p>
+        <button onClick={forceRefresh} className="btn-retry">Retry</button>
       </div>
     );
   }
 
-  const phase = gameState.phase;
-
   return (
-    <div className="game-page">
+    <div className="gp">
       {/* ── Header ── */}
-      <header className="game-page__header">
-        <button className="btn-back" onClick={() => navigate('/lobby')}>← Lobby</button>
-        <div className="game-page__title">
-          <h1>Game #{gameId}</h1>
-          {isTournamentGame && (
-            <TournamentBadge
-              tournamentId={gameState.tournamentId!}
-              matchId={gameState.tournamentMatchId!}
-            />
+      <div className="gp__header">
+        <button className="gp__back" onClick={() => navigate('/lobby')}>← Lobby</button>
+        <h1 className="gp__title">Game #{gameId}</h1>
+
+        {/* Polling status indicator */}
+        <div className="gp__sync">
+          {status === 'polling' && <span className="sync-dot sync-dot--ok" title="Live" />}
+          {status === 'error'   && (
+            <span className="sync-dot sync-dot--err" title={`Retry ${errorCount}x`} />
           )}
-        </div>
-        <div className="game-page__bet">
-          {gameState.bet !== '0' && (
-            <span className="bet-badge">
-              💰 {(Number(gameState.bet) / 1e18).toFixed(3)} EGLD
+          {status === 'stopped' && <span className="sync-dot sync-dot--off" title="Finished" />}
+          {lastUpdated && (
+            <span className="sync-age">
+              {Math.round((Date.now() - lastUpdated) / 1000)}s ago
             </span>
           )}
+          <button className="sync-refresh" onClick={forceRefresh} title="Force refresh">↺</button>
         </div>
-      </header>
+      </div>
 
-      {/* ── Status banner ── */}
-      {lastAction && (
-        <div
-          className={`game-page__banner ${
-            lastAction.startsWith('❌') ? 'banner--error' :
-            lastAction.startsWith('🏆') ? 'banner--win' : 'banner--info'
-          }`}
-        >
-          {lastAction}
-          <button className="banner__close" onClick={() => setLastAction(null)}>✕</button>
-        </div>
-      )}
+      {/* ── Game status bar ── */}
+      <GameStatus
+        phase={phase}
+        isMyTurn={isMyTurn}
+        isFinished={isFinished}
+        didWin={didWin}
+        playerA={gameState.playerA}
+        playerB={gameState.playerB}
+        myAddress={address ?? ''}
+      />
 
-      {/* ══════════════ PHASE: Waiting for opponent ══════════════ */}
-      {phase === 'WaitingForOpponent' && (
-        <div className="game-page__waiting">
-          <div className="waiting-card">
-            <div className="waiting-icon">⚓</div>
-            <h2>Waiting for opponent</h2>
-            <p>Share this Game ID with your opponent:</p>
-            <div className="waiting-id">{gameId}</div>
-            <p className="waiting-hint">They paste it in the Lobby → Join Game.</p>
-            {isCreator && (
-              <button className="btn btn--danger" onClick={handleWithdraw}>
-                Cancel &amp; Withdraw Wager
-              </button>
-            )}
-          </div>
+      {/* ── Ship placement phase ── */}
+      {isPlacement && (
+        <div className="gp__placement">
+          <h2 className="gp__section-title">Place Your Fleet</h2>
+          <PlacementBoard onConfirm={handlePlaceShips} />
         </div>
       )}
 
-      {/* ══════════════ PHASE: Placing ships ══════════════ */}
-      {phase === 'PlacingShips' && (
-        <div className="game-page__placement">
-          <h2 className="phase-title">Place Your Fleet</h2>
-          <p className="phase-subtitle">
-            Place all 5 ships secretly. Press <kbd>R</kbd> or right-click to rotate.
-            Your opponent is doing the same simultaneously.
-          </p>
-          <PlacementBoard
-            onPlacementsChange={setPlacements}
-            disabled={placingShips}
-          />
-          <div className="placement-actions">
-            <span className="placement-count">{placements.length}/5 ships placed</span>
-            <button
-              className="btn btn--primary"
-              disabled={placements.length !== 5 || placingShips}
-              onClick={handlePlaceShips}
-            >
-              {placingShips ? 'Submitting...' : 'Confirm Fleet ✓'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ══════════════ PHASE: In Progress / Finished ══════════════ */}
-      {(phase === 'InProgress' || phase === 'Finished') && (
-        <div className="game-page__battle">
-          <div className="battle-layout">
-            {/* Left — My board (defence) */}
-            <div className="board-section board-section--mine">
-              <h3 className="board-label">
-                🛡 Your Fleet
-                {phase === 'InProgress' && !isMyTurn && (
-                  <span className="turn-indicator turn-indicator--waiting">
-                    Opponent's turn…
-                  </span>
-                )}
-              </h3>
-              <GameBoard
-                cells={myBoard}
-                isInteractive={false}
-                showShips
-              />
-            </div>
-
-            {/* Centre — Status panel */}
-            <GameStatus
-              gameState={gameState}
-              address={address}
-              isMyTurn={isMyTurn}
-              phase={phase}
+      {/* ── Battle phase ── */}
+      {!isPlacement && (
+        <div className="gp__boards">
+          <div className="gp__board-wrap">
+            <h3 className="gp__board-label">Your Board</h3>
+            <GameBoard
+              cells={gameState.myBoard ?? []}
+              interactive={false}
+              onCellClick={() => {}}
             />
-
-            {/* Right — Opponent board (attack) */}
-            <div className="board-section board-section--opponent">
-              <h3 className="board-label">
-                🎯 Enemy Waters
-                {isMyTurn && phase === 'InProgress' && (
-                  <span className="turn-indicator turn-indicator--active">
-                    ← Your turn! Fire!
-                  </span>
-                )}
-              </h3>
-              <GameBoard
-                cells={opponentBoard}
-                isInteractive={isMyTurn && phase === 'InProgress' && !attacking}
-                onCellClick={handleAttack}
-                showShips={false}
-              />
-              {attacking && (
-                <p className="attacking-hint">💨 Attack in progress...</p>
-              )}
-            </div>
           </div>
+          <div className="gp__board-wrap">
+            <h3 className="gp__board-label">
+              {isMyTurn ? '🎯 Attack!' : "Opponent's Board"}
+            </h3>
+            <GameBoard
+              cells={gameState.opponentBoard ?? []}
+              interactive={isMyTurn && !isFinished}
+              onCellClick={handleAttack}
+            />
+          </div>
+        </div>
+      )}
 
-          {/* ── Winner overlay ── */}
-          {phase === 'Finished' && gameState.winner && (
-            <div className="game-page__result">
-              <div className="result-card">
-                {gameState.winner === address ? (
-                  <>
-                    <div className="result-icon">🏆</div>
-                    <h2>Victory!</h2>
-                    <p>You sank the entire enemy fleet.</p>
-                    {isTournamentGame && (
-                      <p className="tournament-note">
-                        ✅ Tournament result submitted automatically.
-                      </p>
-                    )}
-                    <button
-                      className="btn btn--primary"
-                      onClick={handleWithdraw}
-                    >
-                      Claim {(Number(gameState.bet) / 1e18).toFixed(3)} EGLD 💰
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <div className="result-icon">💀</div>
-                    <h2>Defeated</h2>
-                    <p>Your fleet was destroyed. Better luck next battle.</p>
-                  </>
-                )}
-                <button
-                  className="btn btn--secondary"
-                  onClick={() => navigate('/lobby')}
-                >
-                  Back to Lobby
-                </button>
-              </div>
-            </div>
-          )}
+      {/* ── Finished overlay ── */}
+      {isFinished && (
+        <div className="gp__result">
+          <div className={`gp__result-badge ${
+            didWin ? 'gp__result-badge--win' : 'gp__result-badge--loss'
+          }`}>
+            {didWin ? '🏆 Victory!' : '💀 Defeat'}
+          </div>
+          <p className="gp__result-sub">
+            {didWin
+              ? 'Prize sent to your wallet!'
+              : `Winner: ${gameState.winner?.slice(0,8)}…`
+            }
+          </p>
+          <button className="btn-primary" onClick={() => navigate('/lobby')}>Back to Lobby</button>
+        </div>
+      )}
+
+      {/* ── Footer actions ── */}
+      {!isFinished && (
+        <div className="gp__footer">
+          <button className="btn-danger" onClick={handleWithdraw}>Withdraw / Forfeit</button>
         </div>
       )}
     </div>

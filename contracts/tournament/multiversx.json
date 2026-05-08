@@ -1,10 +1,13 @@
 {
-  "language": "rust",
-  "settings": {
-    "output-dir": "output",
-    "contract": {
+  "buildMetadata": {
+    "rustVersion": "1.78.0",
+    "contractCrate": {
       "name": "tournament",
-      "add-unlabelled-endpoints-to-wasm": true
+      "version": "0.1.0"
+    },
+    "framework": {
+      "name": "multiversx-sc",
+      "version": "0.45.0"
     }
   }
 }
