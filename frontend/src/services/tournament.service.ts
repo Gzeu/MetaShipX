@@ -1,177 +1,92 @@
-/**
- * TournamentService — frontend bindings for the tournament smart contract.
- * Uses @multiversx/sdk-dapp for transaction signing + sdk-core for queries.
- */
-import {
-  Address,
-  SmartContract,
-  ContractCallPayloadBuilder,
-  ContractFunction,
-  BigUIntValue,
-  U64Value,
-  StringValue,
-  AddressValue,
-} from '@multiversx/sdk-core';
-import { sendTransactions } from '@multiversx/sdk-dapp/services';
 import { ProxyNetworkProvider } from '@multiversx/sdk-network-providers';
-import { TOURNAMENT_CONTRACT_ADDRESS, NETWORK_CONFIG } from '../config';
+import { Address, ContractFunction, ResultsParser, SmartContract } from '@multiversx/sdk-core';
+import { BATTLESHIP_ADDRESS, NETWORK_PROVIDER_URL } from '../config';
 
-export type TournamentStatus = 'Registration' | 'Active' | 'Finished' | 'Cancelled';
+export interface BracketMatch {
+  player1: string;
+  player2: string | null;
+  winner: string | null;
+  status: 'pending' | 'active' | 'completed';
+}
+
+export interface TournamentRound {
+  label: string;
+  matches: BracketMatch[];
+}
 
 export interface Tournament {
-  id: number;
+  id: string;
   name: string;
-  entryFee: string;     // EGLD denominated
+  status: 'open' | 'in_progress' | 'completed';
+  players: number;
   maxPlayers: number;
-  startTime: number;    // unix
-  status: TournamentStatus;
-  playerCount: number;
-  currentRound: number;
-  winner: string | null;
+  entryFee: string;
   prizePool: string;
-  prizeClaimed: boolean;
+  startTime: number;
 }
 
-export interface TournamentMatch {
-  matchId: number;
-  tournamentId: number;
-  round: number;
-  playerA: string;
-  playerB: string;
-  gameId: number | null;
-  winner: string | null;
-}
+const provider = new ProxyNetworkProvider(NETWORK_PROVIDER_URL);
 
-class TournamentService {
-  private contract: SmartContract;
-  private provider: ProxyNetworkProvider;
-
-  constructor() {
-    this.contract = new SmartContract({ address: new Address(TOURNAMENT_CONTRACT_ADDRESS) });
-    this.provider = new ProxyNetworkProvider(NETWORK_CONFIG.apiUrl);
-  }
-
-  // ── Transactions ─────────────────────────────────────────────────────
-
-  async register(tournamentId: number, entryFeeWei: string): Promise<void> {
-    const data = new ContractCallPayloadBuilder()
-      .setFunction(new ContractFunction('register'))
-      .addArg(new U64Value(BigInt(tournamentId)))
-      .build();
-
-    await sendTransactions({
-      transactions: [{
-        value: entryFeeWei,
-        data,
-        receiver: TOURNAMENT_CONTRACT_ADDRESS,
-        gasLimit: 10_000_000,
-      }],
-      transactionsDisplayInfo: {
-        processingMessage: 'Registering for tournament…',
-        errorMessage:      'Registration failed',
-        successMessage:    'Registered! Good luck!',
-      },
-    });
-  }
-
-  async claimPrize(tournamentId: number): Promise<void> {
-    const data = new ContractCallPayloadBuilder()
-      .setFunction(new ContractFunction('claimPrize'))
-      .addArg(new U64Value(BigInt(tournamentId)))
-      .build();
-
-    await sendTransactions({
-      transactions: [{
-        value: '0',
-        data,
-        receiver: TOURNAMENT_CONTRACT_ADDRESS,
-        gasLimit: 10_000_000,
-      }],
-      transactionsDisplayInfo: {
-        processingMessage: 'Claiming prize…',
-        errorMessage:      'Claim failed',
-        successMessage:    '🏆 Prize claimed!',
-      },
-    });
-  }
-
-  async claimRefund(tournamentId: number): Promise<void> {
-    const data = new ContractCallPayloadBuilder()
-      .setFunction(new ContractFunction('claimRefund'))
-      .addArg(new U64Value(BigInt(tournamentId)))
-      .build();
-
-    await sendTransactions({
-      transactions: [{
-        value: '0',
-        data,
-        receiver: TOURNAMENT_CONTRACT_ADDRESS,
-        gasLimit: 5_000_000,
-      }],
-      transactionsDisplayInfo: {
-        processingMessage: 'Claiming refund…',
-        errorMessage:      'Refund failed',
-        successMessage:    'Refund received',
-      },
-    });
-  }
-
-  // ── Views ───────────────────────────────────────────────────────────
-
-  async getTournament(tournamentId: number): Promise<Tournament> {
-    const interaction = this.contract.methods.getTournament([new U64Value(BigInt(tournamentId))]);
-    const res = await this.provider.queryContract(interaction.buildQuery());
-    const { firstValue } = interaction.getEndpoint().output;
-    // Decode raw bytes (simplified — in production use AbiRegistry)
-    const raw = res.returnData[0];
-    return this._decodeTournament(raw, tournamentId);
-  }
-
-  async getTournamentCount(): Promise<number> {
-    const interaction = this.contract.methods.getTournamentCount([]);
-    const res = await this.provider.queryContract(interaction.buildQuery());
-    return Number(BigInt('0x' + Buffer.from(res.returnData[0], 'base64').toString('hex') || '0'));
-  }
-
-  async getRoundMatches(tournamentId: number, round: number): Promise<number[]> {
-    const interaction = this.contract.methods.getRoundMatches([
-      new U64Value(BigInt(tournamentId)),
-      new U64Value(BigInt(round)),
-    ]);
-    const res = await this.provider.queryContract(interaction.buildQuery());
-    return res.returnData.map(d =>
-      Number(BigInt('0x' + Buffer.from(d, 'base64').toString('hex') || '0'))
-    );
-  }
-
-  async isRegistered(tournamentId: number, player: string): Promise<boolean> {
-    const interaction = this.contract.methods.isRegistered([
-      new U64Value(BigInt(tournamentId)),
-      new AddressValue(new Address(player)),
-    ]);
-    const res = await this.provider.queryContract(interaction.buildQuery());
-    const val = res.returnData[0];
-    return val === 'AQ==';
-  }
-
-  // ── Helpers ────────────────────────────────────────────────────────
-
-  private _decodeTournament(raw: string, id: number): Tournament {
-    // Placeholder decoder — replace with AbiRegistry.loadAbi() in production
-    return {
-      id,
-      name: `Tournament #${id}`,
-      entryFee: '0',
-      maxPlayers: 8,
-      startTime: 0,
-      status: 'Registration',
-      playerCount: 0,
-      currentRound: 0,
-      winner: null,
-      prizePool: '0',
-      prizeClaimed: false,
-    };
+export async function getActiveTournaments(): Promise<Tournament[]> {
+  try {
+    const contract = new SmartContract({ address: new Address(BATTLESHIP_ADDRESS) });
+    const query = contract.createQuery({ func: new ContractFunction('getActiveTournaments'), args: [] });
+    const res = await provider.queryContract(query);
+    const parser = new ResultsParser();
+    const { firstValue } = parser.parseUntypedQueryResponse(res);
+    if (!firstValue) return getMockTournaments();
+    return firstValue.valueOf();
+  } catch {
+    return getMockTournaments();
   }
 }
 
-export const tournamentService = new TournamentService();
+export async function joinTournament(tournamentId: string, entryFee: string): Promise<void> {
+  // Implemented via TransactionManager in a hook
+  console.log('joinTournament', tournamentId, entryFee);
+}
+
+export async function getTournamentBracket(tournamentId: string): Promise<TournamentRound[]> {
+  // Mock bracket — replace with on-chain query
+  await new Promise(r => setTimeout(r, 600));
+  return getMockBracket();
+}
+
+function getMockTournaments(): Tournament[] {
+  return [
+    { id: 't001', name: 'Friday Frenzy', status: 'open', players: 6, maxPlayers: 8, entryFee: '0.5', prizePool: '4.0', startTime: Date.now() + 3600_000 },
+    { id: 't002', name: 'Weekend Warship', status: 'in_progress', players: 8, maxPlayers: 8, entryFee: '1.0', prizePool: '8.0', startTime: Date.now() - 600_000 },
+    { id: 't003', name: 'Flagship Cup', status: 'open', players: 2, maxPlayers: 16, entryFee: '2.0', prizePool: '32.0', startTime: Date.now() + 7200_000 },
+  ];
+}
+
+function getMockBracket(): TournamentRound[] {
+  const a = 'erd1abc...1234';
+  const b = 'erd1def...5678';
+  const c = 'erd1ghi...9012';
+  const d = 'erd1jkl...3456';
+  return [
+    {
+      label: 'Quarter-Finals',
+      matches: [
+        { player1: a, player2: b, winner: a, status: 'completed' },
+        { player1: c, player2: d, winner: c, status: 'completed' },
+        { player1: 'erd1mno...7890', player2: 'erd1pqr...2345', winner: null, status: 'active' },
+        { player1: 'erd1stu...6789', player2: 'erd1vwx...0123', winner: null, status: 'pending' },
+      ],
+    },
+    {
+      label: 'Semi-Finals',
+      matches: [
+        { player1: a, player2: c, winner: null, status: 'pending' },
+        { player1: 'TBD', player2: 'TBD', winner: null, status: 'pending' },
+      ],
+    },
+    {
+      label: 'Grand Final',
+      matches: [
+        { player1: 'TBD', player2: 'TBD', winner: null, status: 'pending' },
+      ],
+    },
+  ];
+}

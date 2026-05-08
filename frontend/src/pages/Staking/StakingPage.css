@@ -1,0 +1,197 @@
+.staking-page {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.staking-hero {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+.staking-title {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #e2e8f0;
+  margin-bottom: 0.4rem;
+}
+.staking-sub {
+  font-size: 0.95rem;
+  color: #64748b;
+}
+
+/* Stats row */
+.staking-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.ss-card {
+  background: #0f172a;
+  border: 1px solid #1e3a5f;
+  border-radius: 12px;
+  padding: 1rem;
+  text-align: center;
+}
+.ss-card--accent {
+  border-color: #2563eb66;
+  background: linear-gradient(135deg, #1e3a5f 0%, #1a1a2e 100%);
+}
+.ss-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #475569;
+  margin-bottom: 0.4rem;
+}
+.ss-value {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #e2e8f0;
+}
+.ss-apr { color: #4ade80; }
+.ss-unit { font-size: 0.75rem; color: #64748b; font-weight: 500; }
+
+.staking-main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+/* Rewards card */
+.staking-rewards-card {
+  background: #0f172a;
+  border: 1px solid #15803d44;
+  border-radius: 16px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.src-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.src-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #4ade80;
+  margin-bottom: 0.3rem;
+}
+.src-amount {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #e2e8f0;
+  line-height: 1;
+}
+.src-unit { font-size: 0.9rem; color: #64748b; }
+.src-claim-btn {
+  padding: 0.6rem 1.25rem;
+  background: #14532d;
+  color: #4ade80;
+  border: 1px solid #15803d;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.src-claim-btn:hover:not(:disabled) { background: #166534; border-color: #4ade80; }
+.src-claim-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.src-progress {
+  height: 4px;
+  background: #1e293b;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.src-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4ade80, #2563eb);
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}
+.src-hint { font-size: 0.75rem; color: #475569; }
+
+/* Action card */
+.staking-action-card {
+  background: #0f172a;
+  border: 1px solid #1e3a5f;
+  border-radius: 16px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.sac-tabs {
+  display: flex;
+  border-bottom: 1px solid #1e3a5f;
+  gap: 0;
+}
+.sac-tab {
+  flex: 1;
+  padding: 0.6rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #64748b;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition: all 0.2s;
+}
+.sac-tab.active {
+  color: #7dd3fc;
+  border-bottom-color: #2563eb;
+}
+.sac-form { display: flex; flex-direction: column; gap: 0.75rem; }
+.sac-label { font-size: 0.75rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+.sac-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 0 1rem;
+}
+.sac-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  padding: 0.7rem 0;
+  color: #e2e8f0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.sac-input::placeholder { color: #475569; }
+.sac-currency { font-size: 0.75rem; color: #64748b; font-weight: 700; }
+.sac-action-btn {
+  padding: 0.75rem;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+}
+.sac-action-btn:hover:not(:disabled) { opacity: 0.9; }
+.sac-action-btn:active { transform: scale(0.98); }
+.sac-action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.sac-action-btn--warn { background: linear-gradient(135deg, #b45309, #92400e); }
+.sac-note { font-size: 0.75rem; color: #475569; text-align: right; }
+
+@media (max-width: 640px) {
+  .staking-stats  { grid-template-columns: repeat(2, 1fr); }
+  .staking-main   { grid-template-columns: 1fr; }
+}

@@ -1,0 +1,148 @@
+.lb-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.lb-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+}
+
+.lb-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin: 0;
+}
+
+.lb-refresh {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin: 0.25rem 0 0;
+}
+
+.lb-refresh-btn {
+  padding: 0.5rem 1.25rem;
+  background: #1e3a5f;
+  color: #7dd3fc;
+  border: 1px solid #2563eb44;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+.lb-refresh-btn:hover:not(:disabled) { background: #1e40af; }
+.lb-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.lb-my-rank {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  background: linear-gradient(135deg, #1e3a5f 0%, #1e2d4a 100%);
+  border: 1px solid #2563eb66;
+  border-radius: 10px;
+  margin-bottom: 1.5rem;
+}
+.lb-my-rank-label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+.lb-my-rank-value { font-size: 1.5rem; font-weight: 800; color: #fbbf24; }
+.lb-my-rank-stat { font-size: 0.875rem; color: #7dd3fc; margin-left: auto; }
+
+.lb-table-wrapper {
+  background: #0f172a;
+  border: 1px solid #1e3a5f;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.lb-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.lb-table thead tr {
+  background: #1e293b;
+}
+
+.lb-table th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  border-bottom: 1px solid #1e3a5f;
+}
+
+.lb-row td {
+  padding: 0.7rem 1rem;
+  font-size: 0.875rem;
+  color: #cbd5e1;
+  border-bottom: 1px solid #1e293b;
+}
+
+.lb-row:last-child td { border-bottom: none; }
+.lb-row:hover td { background: #1e293b55; }
+
+.lb-row--top td { color: #e2e8f0; }
+.lb-row--me td { background: #1e3a5f33 !important; }
+.lb-row--me:hover td { background: #1e3a5f55 !important; }
+
+.lb-rank { font-size: 1.1rem; min-width: 48px; }
+.lb-addr { font-family: monospace; }
+.lb-you { color: #7dd3fc; font-size: 0.75rem; }
+.lb-wins { color: #4ade80; font-weight: 600; }
+.lb-losses { color: #f87171; font-weight: 600; }
+.lb-wager { color: #fbbf24; font-size: 0.8rem; }
+
+.lb-wr-bar {
+  position: relative;
+  width: 100px;
+  height: 18px;
+  background: #1e293b;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.lb-wr-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: linear-gradient(90deg, #2563eb, #7c3aed);
+  border-radius: 4px;
+  transition: width 0.6s ease;
+}
+.lb-wr-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #fff;
+  mix-blend-mode: plus-lighter;
+}
+
+.lb-skeleton { padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.lb-skeleton-row {
+  height: 40px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #1e293b 25%, #243451 50%, #1e293b 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@media (max-width: 600px) {
+  .lb-table th:nth-child(6),
+  .lb-table td:nth-child(6) { display: none; }
+  .lb-wr-bar { width: 70px; }
+}

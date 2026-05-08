@@ -1,84 +1,70 @@
-import React, { useState } from 'react';
+import React, { useCallback } from 'react';
 import './GameBoard.css';
 
 export type CellState = 'empty' | 'ship' | 'hit' | 'miss' | 'sunk';
 
-export interface Cell {
+interface Animation {
   row: number;
   col: number;
-  state: CellState;
+  type: 'hit' | 'miss';
 }
 
-interface Props {
-  cells: Cell[][];
-  interactive: boolean;
+interface GameBoardProps {
+  cells: CellState[];
+  interactive?: boolean;
   onCellClick: (row: number, col: number) => void;
-  showShips?: boolean;
+  animations?: Animation[];
+  label?: string;
 }
 
-const COL_LABELS = ['A','B','C','D','E','F','G','H','I','J'];
+const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 
-export const GameBoard: React.FC<Props> = ({ cells, interactive, onCellClick, showShips = true }) => {
-  const [hovered, setHovered] = useState<string | null>(null);
-
-  // Build a 10x10 grid if cells is flat or empty
-  const grid: Cell[][] = Array.from({ length: 10 }, (_, r) =>
-    Array.from({ length: 10 }, (_, c) => {
-      const found = cells.flat?.().find(cell => cell.row === r && cell.col === c);
-      return found ?? { row: r, col: c, state: 'empty' as CellState };
-    })
-  );
-
-  function cellClass(cell: Cell): string {
-    const base = 'gb__cell';
-    const interactiveClass = interactive && cell.state === 'empty' ? ' gb__cell--interactive' : '';
-    const hoverClass = interactive && hovered === `${cell.row}-${cell.col}` ? ' gb__cell--hovered' : '';
-    switch (cell.state) {
-      case 'ship': return base + (showShips ? ' gb__cell--ship' : '') + hoverClass;
-      case 'hit':  return base + ' gb__cell--hit' + ' gb__cell--animated';
-      case 'miss': return base + ' gb__cell--miss' + ' gb__cell--animated';
-      case 'sunk': return base + ' gb__cell--sunk' + ' gb__cell--animated';
-      default:     return base + interactiveClass + hoverClass;
-    }
-  }
-
-  function cellContent(cell: Cell): string {
-    switch (cell.state) {
-      case 'hit':  return '💥';
-      case 'miss': return '〇';
-      case 'sunk': return '☠️';
-      default:     return '';
-    }
-  }
+export function GameBoard({ cells, interactive = false, onCellClick, animations = [], label }: GameBoardProps) {
+  const getCellClass = useCallback((index: number, state: CellState) => {
+    const row = Math.floor(index / 10);
+    const col = index % 10;
+    const anim = animations.find(a => a.row === row && a.col === col);
+    const classes = ['gb-cell', `gb-cell--${state}`];
+    if (interactive && state === 'empty') classes.push('gb-cell--clickable');
+    if (anim) classes.push(`gb-cell--anim-${anim.type}`);
+    return classes.join(' ');
+  }, [interactive, animations]);
 
   return (
-    <div className="gb">
+    <div className="gb-wrapper" aria-label={`${label ?? ''} game board`}>
       {/* Column headers */}
-      <div className="gb__grid">
-        <div className="gb__corner" />
-        {COL_LABELS.map(l => (
-          <div key={l} className="gb__col-label">{l}</div>
-        ))}
-
-        {grid.map((row, ri) => (
-          <React.Fragment key={ri}>
-            <div className="gb__row-label">{ri + 1}</div>
-            {row.map(cell => (
-              <div
-                key={`${cell.row}-${cell.col}`}
-                className={cellClass(cell)}
-                onMouseEnter={() => interactive && setHovered(`${cell.row}-${cell.col}`)}
-                onMouseLeave={() => setHovered(null)}
-                onClick={() => interactive && cell.state === 'empty' && onCellClick(cell.row, cell.col)}
+      <div className="gb-header-row">
+        <div className="gb-corner" />
+        {COLS.map(c => <div key={c} className="gb-col-label">{c}</div>)}
+      </div>
+      <div className="gb-grid-row">
+        {/* Row labels */}
+        <div className="gb-row-labels">
+          {Array.from({ length: 10 }, (_, i) => (
+            <div key={i} className="gb-row-label">{i + 1}</div>
+          ))}
+        </div>
+        {/* Grid */}
+        <div className="gb-grid">
+          {cells.map((state, idx) => {
+            const row = Math.floor(idx / 10);
+            const col = idx % 10;
+            return (
+              <button
+                key={idx}
+                className={getCellClass(idx, state)}
+                onClick={() => interactive && state === 'empty' ? onCellClick(row, col) : undefined}
+                disabled={!interactive || state !== 'empty'}
+                aria-label={`${COLS[col]}${row + 1} ${state}`}
               >
-                <span className="gb__cell-content">{cellContent(cell)}</span>
-              </div>
-            ))}
-          </React.Fragment>
-        ))}
+                {state === 'hit'  && <span className="gb-icon gb-hit">💥</span>}
+                {state === 'miss' && <span className="gb-icon gb-miss">○</span>}
+                {state === 'sunk' && <span className="gb-icon gb-sunk">☠</span>}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
-};
-
-export default GameBoard;
+}
