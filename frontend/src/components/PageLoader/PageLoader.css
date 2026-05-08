@@ -1,46 +1,59 @@
-.pl-overlay {
-  position: fixed;
-  inset: 0;
+.page-loader {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: #060e1a;
-  z-index: 9999;
-  gap: 1.5rem;
+  min-height: 60vh;
+  gap: 1rem;
+  color: var(--color-primary, #4f98a3);
 }
 
-.pl-ship {
-  animation: pl-float 2.4s ease-in-out infinite;
+.page-loader__ship {
+  width: 80px;
+  animation: ship-bob 1.6s ease-in-out infinite;
 }
 
-.pl-svg {
-  width: 120px;
+.page-loader__ship svg {
+  width: 100%;
   height: auto;
-  filter: drop-shadow(0 0 16px #2563eb66);
 }
 
-@keyframes pl-float {
-  0%, 100% { transform: translateY(0) rotate(-1deg); }
-  50%       { transform: translateY(-12px) rotate(1deg); }
-}
-
-.pl-dots {
+.page-loader__waves {
   display: flex;
-  gap: 0.5rem;
+  gap: 6px;
+  align-items: flex-end;
+  height: 20px;
 }
 
-.pl-dots span {
-  width: 8px;
-  height: 8px;
-  background: #2563eb;
-  border-radius: 50%;
-  animation: pl-bounce 1.2s ease-in-out infinite;
+.page-loader__waves span {
+  display: block;
+  width: 6px;
+  border-radius: 3px;
+  background: currentColor;
+  animation: wave-bounce 1.2s ease-in-out infinite;
 }
-.pl-dots span:nth-child(2) { animation-delay: 0.2s; background: #7c3aed; }
-.pl-dots span:nth-child(3) { animation-delay: 0.4s; background: #7dd3fc; }
 
-@keyframes pl-bounce {
-  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-  40%           { transform: scale(1.2); opacity: 1; }
+.page-loader__waves span:nth-child(1) { height: 8px;  animation-delay: 0s; }
+.page-loader__waves span:nth-child(2) { height: 16px; animation-delay: 0.15s; }
+.page-loader__waves span:nth-child(3) { height: 8px;  animation-delay: 0.3s; }
+
+.page-loader__label {
+  font-size: 0.875rem;
+  color: var(--color-text-muted, #797876);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@keyframes ship-bob {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-8px); }
+}
+
+@keyframes wave-bounce {
+  0%, 100% { transform: scaleY(0.6); opacity: 0.5; }
+  50%       { transform: scaleY(1);   opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-loader__ship, .page-loader__waves span { animation: none; }
 }
