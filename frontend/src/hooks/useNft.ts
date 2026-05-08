@@ -1,51 +1,87 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useGetAccountInfo, useGetIsLoggedIn } from '@multiversx/sdk-dapp/hooks';
-import { nftService } from '../services/nft.service';
+import { useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
+import { sendTransactions } from '@multiversx/sdk-dapp/services';
+import { NftService } from '../services/nft.service';
+import { CONTRACTS } from '../config';
 
-export function useNft() {
-  const { address } = useGetAccountInfo();
-  const isLoggedIn = useGetIsLoggedIn();
+const nftService = new NftService(CONTRACTS.NFT_ADDRESS);
 
-  const [userShips, setUserShips] = useState<any[]>([]);
-  const [mintPrice, setMintPrice] = useState<string>('50000000000000000');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export interface ShipDisplay {
+  nonce: number;
+  name: string;
+  shipType: number;
+  level: number;
+  wins: number;
+  mintedAtMs: bigint;
+}
+
+interface UseNft {
+  ships: ShipDisplay[];
+  mintPrice: bigint;
+  loading: boolean;
+  txPending: boolean;
+  mint: (shipType: number, name: string) => Promise<void>;
+  upgrade: (nonce: number) => Promise<void>;
+}
+
+export function useNft(): UseNft {
+  const { account } = useGetAccountInfo();
+  const [ships, setShips] = useState<ShipDisplay[]>([]);
+  const [mintPrice, setMintPrice] = useState<bigint>(0n);
+  const [loading, setLoading] = useState(false);
+  const [txPending, setTxPending] = useState(false);
 
   const fetchData = useCallback(async () => {
-    if (!isLoggedIn || !address) return;
-    setIsLoading(true);
-    setError(null);
+    if (!account.address) return;
+    setLoading(true);
     try {
-      const [ships, price] = await Promise.all([
-        nftService.getUserShips(address),
+      const [userShips, price] = await Promise.all([
+        nftService.getUserShips(account.address),
         nftService.getMintPrice(),
       ]);
-      setUserShips(ships || []);
-      setMintPrice(price || '50000000000000000');
-    } catch (e: any) {
-      setError(e.message);
+      setMintPrice(BigInt(price));
+
+      const detailed = await Promise.all(
+        userShips.map(async (nonce: number) => {
+          const meta = await nftService.getShipMetadata(nonce);
+          return {
+            nonce,
+            name: meta.name,
+            shipType: meta.shipType,
+            level: meta.level,
+            wins: meta.wins,
+            mintedAtMs: BigInt(meta.mintedAtMs ?? 0),
+          } as ShipDisplay;
+        })
+      );
+      setShips(detailed);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  }, [address, isLoggedIn]);
+  }, [account.address]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const mintShip = useCallback(async (shipType: number, name: string) => {
-    return nftService.mintShip(shipType, name);
-  }, []);
+  const mint = useCallback(async (shipType: number, name: string) => {
+    setTxPending(true);
+    try {
+      const tx = nftService.buildMintTx(shipType, name, mintPrice, account.address);
+      await sendTransactions({ transactions: [tx] });
+      await fetchData();
+    } finally { setTxPending(false); }
+  }, [mintPrice, account.address, fetchData]);
 
-  const upgradeShip = useCallback(async (nonce: number) => {
-    return nftService.upgradeShip(nonce);
-  }, []);
+  const upgrade = useCallback(async (nonce: number) => {
+    setTxPending(true);
+    try {
+      const ship = ships.find(s => s.nonce === nonce);
+      if (!ship) return;
+      const cost = mintPrice * BigInt(ship.level);
+      const tx = nftService.buildUpgradeTx(nonce, cost, account.address);
+      await sendTransactions({ transactions: [tx] });
+      await fetchData();
+    } finally { setTxPending(false); }
+  }, [ships, mintPrice, account.address, fetchData]);
 
-  return {
-    userShips,
-    mintPrice,
-    isLoading,
-    error,
-    mintShip,
-    upgradeShip,
-    refetch: fetchData,
-  };
+  return { ships, mintPrice, loading, txPending, mint, upgrade };
 }

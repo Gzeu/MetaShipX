@@ -1,121 +1,152 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
 import { useStaking } from '../hooks/useStaking';
 import './StakingPage.css';
 
 export const StakingPage: React.FC = () => {
-  const { address } = useGetAccountInfo();
+  const { account } = useGetAccountInfo();
   const {
-    info, loading, error,
-    handleStake, handleUnstake, handleClaim,
-    refresh,
-  } = useStaking(address);
+    stakeInfo,
+    pendingRewards,
+    totalStaked,
+    rewardPool,
+    apr,
+    loading,
+    stake,
+    unstake,
+    claimRewards,
+    staking: txPending,
+  } = useStaking();
 
-  const [stakeAmt,   setStakeAmt]   = React.useState('');
-  const [unstakeAmt, setUnstakeAmt] = React.useState('');
+  const [stakeAmount, setStakeAmount] = React.useState('');
+  const [unstakeAmount, setUnstakeAmount] = React.useState('');
 
-  useEffect(() => { refresh(); }, [address]);
+  const handleStake = () => {
+    const egld = parseFloat(stakeAmount);
+    if (isNaN(egld) || egld <= 0) return;
+    stake(BigInt(Math.floor(egld * 1e18)));
+    setStakeAmount('');
+  };
 
-  const fmtEgld = (wei: string) => {
-    try { return (Number(BigInt(wei)) / 1e18).toFixed(4); }
-    catch { return wei; }
+  const handleUnstake = () => {
+    const egld = parseFloat(unstakeAmount);
+    if (isNaN(egld) || egld <= 0) return;
+    unstake(BigInt(Math.floor(egld * 1e18)));
+    setUnstakeAmount('');
   };
 
   return (
     <div className="staking-page">
-      <h1 className="sp-title">💎 EGLD Staking</h1>
-      <p className="sp-subtitle">Stake EGLD to earn rewards from the MetaShipX battle pool</p>
+      <h1>⚓ EGLD Staking</h1>
+      <p className="staking-subtitle">
+        Stake EGLD to earn rewards from game fees. APR updates after each match.
+      </p>
 
-      {error && <div className="sp-feedback err">{error}</div>}
-
-      <div className="sp-stats-bar">
-        <div className="sp-stat">
-          <span className="sp-stat-label">My Stake</span>
-          <span className="sp-stat-value">
-            {loading ? '…' : `${fmtEgld(info?.stakedAmount ?? '0')} EGLD`}
-          </span>
+      {/* Pool stats */}
+      <div className="stats-grid">
+        <div className="stat-card">
+          <span className="stat-label">APR</span>
+          <span className="stat-value apr">{apr ? (apr / 100).toFixed(2) : '—'}%</span>
         </div>
-        <div className="sp-stat">
-          <span className="sp-stat-label">Pending Rewards</span>
-          <span className="sp-stat-value reward">
-            {loading ? '…' : `${fmtEgld(info?.pendingRewards ?? '0')} EGLD`}
-          </span>
+        <div className="stat-card">
+          <span className="stat-label">Total Staked</span>
+          <span className="stat-value">{formatEgld(totalStaked)} EGLD</span>
         </div>
-        <div className="sp-stat">
-          <span className="sp-stat-label">APR</span>
-          <span className="sp-stat-value apr">{loading ? '…' : `${info?.apr ?? 20}%`}</span>
+        <div className="stat-card">
+          <span className="stat-label">Reward Pool</span>
+          <span className="stat-value">{formatEgld(rewardPool)} EGLD</span>
         </div>
-        <div className="sp-stat">
-          <span className="sp-stat-label">Total Staked</span>
-          <span className="sp-stat-value">
-            {loading ? '…' : `${fmtEgld(info?.totalStaked ?? '0')} EGLD`}
-          </span>
-        </div>
-        <div className="sp-stat">
-          <span className="sp-stat-label">Reward Pool</span>
-          <span className="sp-stat-value">
-            {loading ? '…' : `${fmtEgld(info?.rewardPool ?? '0')} EGLD`}
-          </span>
+        <div className="stat-card">
+          <span className="stat-label">My Stake</span>
+          <span className="stat-value">{stakeInfo ? formatEgld(BigInt(stakeInfo.amount) * BigInt(1e18 / 1e18)) : '0'} EGLD</span>
         </div>
       </div>
 
-      <div className="sp-actions">
-        <div className="sp-action-card">
-          <h3>Stake</h3>
-          <div className="sp-input-row">
+      {/* Pending rewards */}
+      {pendingRewards !== null && pendingRewards > 0n && (
+        <div className="rewards-banner">
+          <span>🎁 Pending Rewards: <strong>{formatEgld(pendingRewards)} EGLD</strong></span>
+          <button
+            className="btn-claim"
+            onClick={claimRewards}
+            disabled={txPending}
+          >
+            {txPending ? 'Processing…' : 'Claim Rewards'}
+          </button>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="staking-actions">
+        <div className="action-card">
+          <h3>Stake EGLD</h3>
+          <div className="input-row">
             <input
-              type="number" min="0.001" step="0.001"
-              placeholder="Amount (EGLD)"
-              value={stakeAmt}
-              onChange={e => setStakeAmt(e.target.value)}
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Amount in EGLD"
+              value={stakeAmount}
+              onChange={e => setStakeAmount(e.target.value)}
             />
             <button
               className="btn-primary"
-              onClick={() => handleStake(stakeAmt).then(() => setStakeAmt(''))}
-              disabled={loading || !address || !stakeAmt}
+              onClick={handleStake}
+              disabled={txPending || !stakeAmount}
             >
-              {loading ? '…' : 'Stake'}
+              Stake
             </button>
           </div>
         </div>
 
-        <div className="sp-action-card">
-          <h3>Unstake</h3>
-          <div className="sp-input-row">
+        <div className="action-card">
+          <h3>Unstake EGLD</h3>
+          <div className="input-row">
             <input
-              type="number" min="0.001" step="0.001"
-              placeholder="Amount (EGLD)"
-              value={unstakeAmt}
-              onChange={e => setUnstakeAmt(e.target.value)}
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Amount in EGLD"
+              value={unstakeAmount}
+              onChange={e => setUnstakeAmount(e.target.value)}
             />
             <button
               className="btn-secondary"
-              onClick={() => handleUnstake(unstakeAmt).then(() => setUnstakeAmt(''))}
-              disabled={loading || !address || !unstakeAmt}
+              onClick={handleUnstake}
+              disabled={txPending || !unstakeAmount}
             >
-              {loading ? '…' : 'Unstake'}
+              Unstake
             </button>
           </div>
         </div>
-
-        <div className="sp-action-card">
-          <h3>Claim Rewards</h3>
-          <p className="sp-claimable">
-            Available: <strong>{fmtEgld(info?.pendingRewards ?? '0')} EGLD</strong>
-          </p>
-          <button
-            className="btn-accent"
-            onClick={() => handleClaim()}
-            disabled={loading || !address || !info?.pendingRewards || info.pendingRewards === '0'}
-          >
-            {loading ? '…' : 'Claim'}
-          </button>
-        </div>
       </div>
 
-      {!address && <p className="sp-warn">Connect your MultiversX wallet to start staking.</p>}
+      {/* Stake info detail */}
+      {stakeInfo && (
+        <div className="stake-detail">
+          <h3>Your Position</h3>
+          <div className="detail-row">
+            <span>Staked since</span>
+            <span>{new Date(Number(stakeInfo.stakedAtMs)).toLocaleString()}</span>
+          </div>
+          <div className="detail-row">
+            <span>Last claimed</span>
+            <span>{new Date(Number(stakeInfo.lastClaimedMs)).toLocaleString()}</span>
+          </div>
+          <div className="detail-row">
+            <span>Total claimed</span>
+            <span>{formatEgld(BigInt(stakeInfo.totalClaimed))} EGLD</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+function formatEgld(attoEgld: bigint | number | undefined): string {
+  if (attoEgld === undefined || attoEgld === null) return '0.0000';
+  const n = typeof attoEgld === 'bigint' ? Number(attoEgld) : attoEgld;
+  return (n / 1e18).toFixed(4);
+}
 
 export default StakingPage;

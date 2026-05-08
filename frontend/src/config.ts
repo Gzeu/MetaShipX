@@ -1,47 +1,35 @@
-// ─── Environment helpers ───────────────────────────────────────────────────
-const env = (key: string, fallback = ''): string =>
-  (import.meta.env[key] as string | undefined) ?? fallback;
+// MetaShipX — frontend config
+// Update CONTRACTS addresses after each deploy
 
-// ─── Network ────────────────────────────────────────────────────────────────
-export const CHAIN_ID = env('VITE_CHAIN_ID', 'D');           // D=devnet 1=mainnet
-export const MX_API_URL = env('VITE_MX_API_URL', 'https://devnet-api.multiversx.com');
-export const MX_EXPLORER_URL = env('VITE_MX_EXPLORER_URL', 'https://devnet-explorer.multiversx.com');
-export const WALLETCONNECT_PROJECT_ID = env('VITE_WALLETCONNECT_PROJECT_ID', '');
+export const NETWORK = {
+  // Supernova devnet: block time 600 ms, same chain ID as pre-Supernova devnet
+  CHAIN_ID: 'D',
+  API_URL: 'https://devnet-api.multiversx.com',
+  EXPLORER_URL: 'https://devnet-explorer.multiversx.com',
+  // Average block time in ms — update to 600 after Supernova mainnet
+  BLOCK_TIME_MS: 600,
+  // Blocks per minute at Supernova cadence
+  BLOCKS_PER_MINUTE: 100,
+} as const;
 
-// ─── Contract addresses ────────────────────────────────────────────────────
-// After devnet deploy, update .env.devnet and set these via VITE_ env vars
-export const BATTLESHIP_CONTRACT = env(
-  'VITE_BATTLESHIP_CONTRACT',
-  'erd1qqqqqqqqqqqqqpgq_BATTLESHIP_PLACEHOLDER',
-);
-export const NFT_CONTRACT = env(
-  'VITE_NFT_CONTRACT',
-  'erd1qqqqqqqqqqqqqpgq_NFT_PLACEHOLDER',
-);
-export const STAKING_CONTRACT = env(
-  'VITE_STAKING_CONTRACT',
-  'erd1qqqqqqqqqqqqqpgq_STAKING_PLACEHOLDER',
-);
-export const MARKETPLACE_CONTRACT = env(
-  'VITE_MARKETPLACE_CONTRACT',
-  'erd1qqqqqqqqqqqqqpgq_MARKETPLACE_PLACEHOLDER',
-);
+export const CONTRACTS = {
+  BATTLESHIP_ADDRESS: import.meta.env.VITE_BATTLESHIP_ADDRESS ?? '',
+  NFT_ADDRESS: import.meta.env.VITE_NFT_ADDRESS ?? '',
+  STAKING_ADDRESS: import.meta.env.VITE_STAKING_ADDRESS ?? '',
+  TOURNAMENT_ADDRESS: import.meta.env.VITE_TOURNAMENT_ADDRESS ?? '',
+  MARKETPLACE_ADDRESS: import.meta.env.VITE_MARKETPLACE_ADDRESS ?? '',
+} as const;
 
-// ─── Token identifiers (set after registerShipCollection) ──────────────────
-export const NFT_COLLECTION_ID = env('VITE_NFT_COLLECTION_ID', 'SHIP-000000');
+export const WALLET_CONNECT_V2_PROJECT_ID =
+  import.meta.env.VITE_WC_PROJECT_ID ?? '';
 
-// ─── Backend ────────────────────────────────────────────────────────────────
-export const BACKEND_URL = env('VITE_API_URL', 'http://localhost:4000');
-export const WS_URL = env('VITE_WS_URL', 'ws://localhost:4000/ws');
+// Supernova-aware polling: at 600 ms/block, poll every 6 s = ~10 blocks
+export const POLL_INTERVAL_MS = 6_000;
 
-// ─── Game constants ─────────────────────────────────────────────────────────
-export const BOARD_SIZE = 10;
-export const TURN_TIMEOUT_SECONDS = 120;  // 2 min per turn
-export const GAME_TIMEOUT_HOURS = 24;     // withdraw after 24h inactivity
+// Turn timeout in blocks (must match contract TURN_TIMEOUT_BLOCKS = 3_000)
+export const TURN_TIMEOUT_BLOCKS = 3_000;
+// Human-readable: at 600 ms/block, 3_000 blocks = 30 minutes
+export const TURN_TIMEOUT_MINUTES = (TURN_TIMEOUT_BLOCKS * NETWORK.BLOCK_TIME_MS) / 60_000;
 
-// ─── Staking ────────────────────────────────────────────────────────────────
-export const STAKING_APR_DISPLAY = 20; // % — for UI display only, real APR is on-chain
-
-// ─── Explorer helper ────────────────────────────────────────────────────────
-export const txUrl = (hash: string) => `${MX_EXPLORER_URL}/transactions/${hash}`;
-export const addressUrl = (addr: string) => `${MX_EXPLORER_URL}/accounts/${addr}`;
+// Staking: APR denominator (matches contract APR_DENOMINATOR = 10_000)
+export const APR_DENOMINATOR = 10_000;

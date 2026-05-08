@@ -1,5 +1,5 @@
 [package]
-name = "staking-wasm"
+name = "battleship-staking-wasm"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -14,11 +14,11 @@ lto = true
 debug = false
 panic = "abort"
 
-[dependencies.staking]
+[dependencies.battleship-staking]
 path = ".."
 
 [dependencies.multiversx-sc-wasm-adapter]
-version = "0.45.0"
+version = "0.65.1"
 
 [workspace]
 members = [".", ".."]

@@ -1,0 +1,112 @@
+.game-page {
+  min-height: 100vh;
+  background: #0a0e1a;
+  color: #e2e8f0;
+  padding: 1.5rem;
+  font-family: 'Orbitron', 'Segoe UI', sans-serif;
+}
+
+.game-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.game-header h1 {
+  flex: 1;
+  font-size: 1.5rem;
+  color: #60a5fa;
+  margin: 0;
+}
+
+.btn-back {
+  background: transparent;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 180ms;
+}
+.btn-back:hover { border-color: #60a5fa; color: #60a5fa; }
+
+.phase-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.phase-inprogress  { background: #1e3a5f; color: #60a5fa; }
+.phase-waitingforopponent { background: #1a2e1a; color: #4ade80; }
+.phase-placingships { background: #2d1a00; color: #fb923c; }
+.phase-finished { background: #1a1a2e; color: #a78bfa; }
+
+.game-result {
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 700;
+  padding: 1.5rem;
+  border-radius: 12px;
+  margin-bottom: 2rem;
+}
+.result-win  { background: linear-gradient(135deg, #0f2d0f, #0a3d0a); color: #4ade80; border: 1px solid #166534; }
+.result-loss { background: linear-gradient(135deg, #2d0a0a, #1a0a0a); color: #f87171; border: 1px solid #7f1d1d; }
+.prize { display: block; font-size: 1.2rem; margin-top: 0.5rem; color: #fbbf24; }
+
+.boards-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-bottom: 1.5rem;
+}
+@media (max-width: 768px) {
+  .boards-container { grid-template-columns: 1fr; }
+}
+
+.board-section h2 {
+  font-size: 1rem;
+  color: #94a3b8;
+  margin-bottom: 0.75rem;
+  text-align: center;
+}
+
+/* Supernova timeout bar */
+.timeout-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  flex-wrap: wrap;
+}
+.timeout-bar strong { color: #fb923c; }
+
+.btn-claim-abandon {
+  margin-left: auto;
+  background: #7f1d1d;
+  color: #fca5a5;
+  border: 1px solid #991b1b;
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 180ms;
+}
+.btn-claim-abandon:hover:not(:disabled) { background: #991b1b; color: #fff; }
+.btn-claim-abandon:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.game-loading, .game-error {
+  text-align: center;
+  padding: 4rem;
+  color: #64748b;
+  font-size: 1.1rem;
+}
+.game-error { color: #f87171; }
