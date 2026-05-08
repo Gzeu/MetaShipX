@@ -1,191 +1,177 @@
-import React, { useCallback, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
-import { attack, placeShips, withdraw } from '../../services/battleship.service';
+import { useGame } from '../../hooks/useGame';
 import { useGamePolling } from '../../hooks/useGamePolling';
+import { useSound } from '../../hooks/useSound';
 import { GameBoard } from '../../components/GameBoard/GameBoard';
-import { PlacementBoard } from '../../components/PlacementBoard/PlacementBoard';
-import { GameStatus } from '../../components/GameStatus/GameStatus';
-import { VictoryModal } from '../../components/VictoryModal/VictoryModal';
-import './game-page.css';
+import { fmtEgld, fmtAddress } from '../../utils/format';
+import { STATUS_LABELS, SHIP_TYPES, SHIP_SIZES } from '../../utils/constants';
+import type { ShipType } from '../../types';
+import './GamePage.css';
 
-export const GamePage: React.FC = () => {
-  const { gameId: gameIdStr } = useParams<{ gameId: string }>();
-  const navigate              = useNavigate();
-  const { address }           = useGetAccountInfo();
-  const gameId                = gameIdStr ? parseInt(gameIdStr) : null;
+type Phase = 'placement' | 'battle' | 'finished';
 
-  const [victoryOpen, setVictoryOpen] = useState(false);
-  const [prevPhase,   setPrevPhase]   = useState<string>('');
+export default function GamePage(): React.ReactElement {
+  const { gameId } = useParams<{ gameId: string }>();
+  const navigate = useNavigate();
+  const { account } = useGetAccountInfo();
+  const myAddress = account.address;
 
-  // ── Real-time polling ─────────────────────────────────────────────────────
-  const { gameState, status, lastUpdated, errorCount, forceRefresh } =
-    useGamePolling(gameId, address ?? '');
+  const { gameState, loading, error, placedShips, isMyTurn,
+          placeShip, submitPlacement, attack, setGameState } = useGame();
+  const { play } = useSound();
 
-  // ── Derived state ─────────────────────────────────────────────────────────
-  const isPlayerA   = gameState?.playerA?.toLowerCase() === address?.toLowerCase();
-  const isPlayerB   = gameState?.playerB?.toLowerCase() === address?.toLowerCase();
-  const isMyTurn    =
-    (isPlayerA && gameState?.phase === 'PlayerATurn') ||
-    (isPlayerB && gameState?.phase === 'PlayerBTurn');
-  const phase       = gameState?.phase ?? 'Loading';
-  const isFinished  = phase === 'Finished';
-  const isPlacement = phase === 'PlacingShips';
-  const didWin      = isFinished && gameState?.winner?.toLowerCase() === address?.toLowerCase();
-  const opponent    = isPlayerA ? (gameState?.playerB ?? '') : (gameState?.playerA ?? '');
+  const [phase, setPhase] = useState<Phase>('placement');
+  const [selectedShip, setSelectedShip] = useState<ShipType>('Destroyer');
+  const [horizontal, setHorizontal] = useState(true);
+  const [statusMsg, setStatusMsg] = useState('');
 
-  // Auto-open victory modal when game finishes
-  React.useEffect(() => {
-    if (phase === 'Finished' && prevPhase !== 'Finished' && prevPhase !== '') {
-      setVictoryOpen(true);
+  // Poll game state every 5s during battle
+  useGamePolling({
+    gameId: gameId ?? '',
+    address: myAddress,
+    enabled: phase === 'battle',
+    onUpdate: (state) => {
+      setGameState(state);
+      if (state.winner) {
+        setPhase('finished');
+        if (state.winner === myAddress) play('victory');
+        else play('defeat');
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (!gameId) { navigate('/'); return; }
+  }, [gameId, navigate]);
+
+  // Determine phase from on-chain status
+  useEffect(() => {
+    if (!gameState) return;
+    if (gameState.status === 2 || gameState.status === 3) setPhase('finished');
+    else if (gameState.status === 1) setPhase('battle');
+  }, [gameState]);
+
+  const handleCellClick = async (row: number, col: number) => {
+    if (phase === 'placement') {
+      const ok = placeShip(selectedShip, row, col, horizontal);
+      if (!ok) { setStatusMsg('Invalid placement'); return; }
+      setStatusMsg(`${selectedShip} placed`);
+      play('click');
+    } else if (phase === 'battle' && isMyTurn) {
+      if (gameState?.opponentBoard[row][col] !== 'empty') return;
+      await attack(row, col);
+      play('cannon');
     }
-    if (phase !== '') setPrevPhase(phase);
-  }, [phase]);
+  };
 
-  // ── Actions ───────────────────────────────────────────────────────────────
-  const handleAttack = useCallback(async (row: number, col: number) => {
-    if (!gameId || !isMyTurn || !address) return;
-    try {
-      await attack(address, gameId, row, col);
-      setTimeout(forceRefresh, 1500);
-    } catch (e: any) {
-      alert(`Attack failed: ${e?.message}`);
-    }
-  }, [gameId, isMyTurn, address, forceRefresh]);
+  const handleSubmitPlacement = async () => {
+    const needed = SHIP_TYPES.reduce((acc, t) => acc + SHIP_SIZES[t], 0);
+    const placed = placedShips.reduce((acc, s) => acc + s.size, 0);
+    if (placed < needed) { setStatusMsg(`Place all ships first (${placed}/${needed} cells)`); return; }
+    await submitPlacement();
+    play('confirm');
+    setPhase('battle');
+  };
 
-  const handlePlaceShips = useCallback(async (positions: number[]) => {
-    if (!gameId || !address) return;
-    try {
-      await placeShips(address, gameId, [positions]);
-      setTimeout(forceRefresh, 1500);
-    } catch (e: any) {
-      alert(`Place ships failed: ${e?.message}`);
-    }
-  }, [gameId, address, forceRefresh]);
-
-  const handleWithdraw = useCallback(async () => {
-    if (!gameId || !address) return;
-    if (!confirm('Withdraw and forfeit the game?')) return;
-    try {
-      await withdraw(address, gameId);
-      navigate('/lobby');
-    } catch (e: any) {
-      alert(`Withdraw failed: ${e?.message}`);
-    }
-  }, [gameId, address, navigate]);
-
-  // ── Loading / error ───────────────────────────────────────────────────────
-  if (!gameId) return <div className="gp-error">Invalid game ID.</div>;
-
-  if (!gameState && (status === 'idle' || status === 'polling')) {
-    return (
-      <div className="gp-loading">
-        <div className="gp-spinner" />
-        <p>Loading game #{gameId}…</p>
-      </div>
-    );
-  }
-
-  if (!gameState) {
-    return (
-      <div className="gp-error">
-        <p>Could not load game #{gameId}.</p>
-        <button onClick={forceRefresh} className="btn-retry">Retry</button>
-      </div>
-    );
-  }
+  const shipsLeft = SHIP_TYPES.filter(t => !placedShips.some(s => s.type === t));
 
   return (
-    <div className="gp">
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div className="gp__header">
-        <button className="gp__back" onClick={() => navigate('/lobby')}>← Lobby</button>
-        <h1 className="gp__title">Game #{gameId}</h1>
-        <div className="gp__sync">
-          {status === 'polling' && <span className="sync-dot sync-dot--ok" title="Live" />}
-          {status === 'error'   && <span className="sync-dot sync-dot--err" title={`Retry ${errorCount}x`} />}
-          {status === 'stopped' && <span className="sync-dot sync-dot--off" title="Finished" />}
-          {lastUpdated && (
-            <span className="sync-age">{Math.round((Date.now() - lastUpdated) / 1000)}s ago</span>
+    <div className="game-page">
+      <header className="game-header">
+        <button className="btn-back" onClick={() => navigate('/')}>← Lobby</button>
+        <h1>Game #{gameId?.slice(0, 8)}</h1>
+        {gameState && (
+          <span className={`status-badge status-${gameState.status}`}>
+            {STATUS_LABELS[gameState.status]}
+          </span>
+        )}
+      </header>
+
+      {error && <div className="game-error">{error}</div>}
+      {loading && <div className="game-loading">Loading…</div>}
+
+      {phase === 'placement' && (
+        <section className="placement-section">
+          <div className="ship-selector">
+            <h3>Select Ship</h3>
+            {shipsLeft.map(t => (
+              <button
+                key={t}
+                className={`ship-btn ${selectedShip === t ? 'active' : ''}`}
+                onClick={() => setSelectedShip(t)}
+              >
+                {t} ({SHIP_SIZES[t]})
+              </button>
+            ))}
+            {shipsLeft.length === 0 && <p className="all-placed">✓ All ships placed</p>}
+          </div>
+
+          <div className="orientation-toggle">
+            <button className={horizontal ? 'active' : ''} onClick={() => setHorizontal(true)}>Horizontal</button>
+            <button className={!horizontal ? 'active' : ''} onClick={() => setHorizontal(false)}>Vertical</button>
+          </div>
+
+          <GameBoard
+            grid={gameState?.myBoard ?? Array.from({ length: 10 }, () => Array(10).fill('empty'))}
+            onCellClick={handleCellClick}
+            placedShips={placedShips}
+            interactive
+            label="Your Fleet"
+          />
+
+          <button className="btn-primary submit-btn" onClick={handleSubmitPlacement}>
+            Confirm Placement
+          </button>
+          {statusMsg && <p className="status-msg">{statusMsg}</p>}
+        </section>
+      )}
+
+      {phase === 'battle' && gameState && (
+        <section className="battle-section">
+          <div className="boards-row">
+            <div className="board-col">
+              <GameBoard
+                grid={gameState.myBoard}
+                placedShips={gameState.myShips}
+                label="Your Board"
+              />
+            </div>
+            <div className="turn-indicator">
+              {isMyTurn ? '🎯 Your Turn' : `⏳ ${fmtAddress(gameState.currentTurn)}'s turn`}
+            </div>
+            <div className="board-col">
+              <GameBoard
+                grid={gameState.opponentBoard}
+                onCellClick={handleCellClick}
+                interactive={isMyTurn}
+                label={`Opponent: ${fmtAddress(gameState.player2 === myAddress ? gameState.player1 : gameState.player2)}`}
+              />
+            </div>
+          </div>
+          <div className="wager-row">
+            <span>Wager: <strong>{fmtEgld(gameState.wager)}</strong></span>
+          </div>
+        </section>
+      )}
+
+      {phase === 'finished' && gameState && (
+        <section className="finished-section">
+          {gameState.winner === myAddress ? (
+            <>
+              <div className="result-win">🏆 Victory!</div>
+              <p>You won {fmtEgld(gameState.wager)} EGLD</p>
+            </>
+          ) : (
+            <>
+              <div className="result-loss">💀 Defeat</div>
+              <p>Better luck next time</p>
+            </>
           )}
-          <button className="sync-refresh" onClick={forceRefresh} title="Force refresh">↺</button>
-        </div>
-      </div>
-
-      {/* ── Status bar ──────────────────────────────────────────────────── */}
-      <GameStatus
-        phase={phase}
-        isMyTurn={isMyTurn}
-        isFinished={isFinished}
-        didWin={didWin}
-        playerA={gameState.playerA}
-        playerB={gameState.playerB}
-        myAddress={address ?? ''}
-      />
-
-      {/* ── Placement phase ─────────────────────────────────────────────── */}
-      {isPlacement && (
-        <div className="gp__placement">
-          <h2 className="gp__section-title">⚓ Place Your Fleet</h2>
-          <p className="gp__placement-hint">
-            Click to place ships • Toggle orientation • 🎲 Random for instant placement
-          </p>
-          <PlacementBoard onConfirm={handlePlaceShips} />
-        </div>
+          <button className="btn-primary" onClick={() => navigate('/')}>Back to Lobby</button>
+        </section>
       )}
-
-      {/* ── Battle phase ────────────────────────────────────────────────── */}
-      {!isPlacement && (
-        <div className="gp__boards">
-          <div className="gp__board-wrap">
-            <h3 className="gp__board-label">🛡 Your Board</h3>
-            <GameBoard
-              cells={gameState.myBoard ?? []}
-              interactive={false}
-              onCellClick={() => {}}
-              showShips
-            />
-          </div>
-          <div className="gp__boards-divider">
-            <span>⚔</span>
-          </div>
-          <div className="gp__board-wrap">
-            <h3 className={`gp__board-label ${isMyTurn ? 'gp__board-label--attack' : ''}`}>
-              {isMyTurn ? '🎯 Attack!' : "Enemy Waters"}
-            </h3>
-            <GameBoard
-              cells={gameState.opponentBoard ?? []}
-              interactive={isMyTurn && !isFinished}
-              onCellClick={handleAttack}
-              showShips={false}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* ── Footer ──────────────────────────────────────────────────────── */}
-      {!isFinished && (
-        <div className="gp__footer">
-          <button className="btn-danger" onClick={handleWithdraw}>⚑ Withdraw / Forfeit</button>
-        </div>
-      )}
-      {isFinished && (
-        <div className="gp__footer">
-          <button className="btn-primary" onClick={() => setVictoryOpen(true)}>See Result</button>
-        </div>
-      )}
-
-      {/* ── Victory Modal ───────────────────────────────────────────────── */}
-      <VictoryModal
-        isOpen={victoryOpen}
-        didWin={didWin}
-        prize={gameState.prize ?? '0'}
-        opponentAddress={opponent}
-        onClose={() => setVictoryOpen(false)}
-        onBackToLobby={() => navigate('/lobby')}
-      />
     </div>
   );
-};
-
-export default GamePage;
+}

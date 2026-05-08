@@ -1,56 +1,111 @@
 import { useState, useCallback } from 'react';
-import {
-  battleshipService,
-  AttackResult,
-} from '../services/battleship.service';
-import type { ShipPlacement, GameStateView, CellState } from '../types/game.types';
+import { useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
+import * as battleshipService from '../services/battleship.service';
+import type { GameState, BoardGrid, CellState, PlacedShip, ShipType } from '../types';
+import { BOARD_SIZE, SHIP_SIZES } from '../utils/constants';
 
-const emptyBoard = (): CellState[][] =>
-  Array.from({ length: 10 }, () => Array(10).fill('empty'));
-
-export interface UseGameReturn {
-  gameState: GameStateView | null;
-  myBoard: CellState[][];
-  opponentBoard: CellState[][];
-  isLoading: boolean;
-  error: string | null;
-  refreshGame: () => Promise<void>;
-  setMyBoard: React.Dispatch<React.SetStateAction<CellState[][]>>;
-  setOpponentBoard: React.Dispatch<React.SetStateAction<CellState[][]>>;
+function emptyBoard(): BoardGrid {
+  return Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill('empty') as CellState[]);
 }
 
-/**
- * useGame — fetches and holds state for a specific game by ID.
- * Used by GamePage.tsx which owns the action handlers directly.
- */
-export function useGame(gameId: number): UseGameReturn {
-  const [gameState, setGameState] = useState<GameStateView | null>(null);
-  const [myBoard, setMyBoard] = useState<CellState[][]>(emptyBoard());
-  const [opponentBoard, setOpponentBoard] = useState<CellState[][]>(emptyBoard());
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+interface UseGameReturn {
+  gameState: GameState | null;
+  loading: boolean;
+  error: string | null;
+  placedShips: PlacedShip[];
+  isMyTurn: boolean;
+  // actions
+  createGame: (wagerEgld: string) => Promise<void>;
+  joinGame: (gameId: string, wagerEgld: string) => Promise<void>;
+  placeShip: (type: ShipType, row: number, col: number, horizontal: boolean) => boolean;
+  submitPlacement: () => Promise<void>;
+  attack: (row: number, col: number) => Promise<void>;
+  refresh: (gameId: string) => Promise<void>;
+  setGameState: React.Dispatch<React.SetStateAction<GameState | null>>;
+}
 
-  const refreshGame = useCallback(async () => {
-    if (!gameId && gameId !== 0) return;
-    setIsLoading(true);
+export function useGame(): UseGameReturn {
+  const { account } = useGetAccountInfo();
+  const address = account.address;
+
+  const [gameState, setGameState] = useState<GameState | null>(null);
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState<string | null>(null);
+  const [placedShips, setPlacedShips] = useState<PlacedShip[]>([]);
+
+  const isMyTurn = gameState?.currentTurn === address;
+
+  const run = useCallback(async <T>(fn: () => Promise<T>): Promise<T | undefined> => {
+    setLoading(true);
+    setError(null);
     try {
-      const raw = await battleshipService.getGameState(gameId);
-      // Map service GameState → GameStateView (canonicalize nulls → undefined)
-      const view: GameStateView = {
-        creator: raw.creator,
-        opponent: raw.opponent ?? undefined,
-        bet: raw.bet,
-        phase: raw.phase as GameStateView['phase'],
-        currentTurn: raw.currentTurn,
-        winner: raw.winner ?? undefined,
-      };
-      setGameState(view);
-    } catch (e: any) {
-      setError(e?.message ?? 'Unknown error');
+      return await fn();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Unknown error');
+      return undefined;
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  }, [gameId]);
+  }, []);
 
-  return { gameState, myBoard, opponentBoard, isLoading, error, refreshGame, setMyBoard, setOpponentBoard };
+  const createGame = useCallback(async (wagerEgld: string) => {
+    await run(() => battleshipService.createGame(address, wagerEgld));
+  }, [address, run]);
+
+  const joinGame = useCallback(async (gameId: string, wagerEgld: string) => {
+    await run(() => battleshipService.joinGame(address, gameId, wagerEgld));
+  }, [address, run]);
+
+  // Returns false if placement is invalid
+  const placeShip = useCallback((type: ShipType, row: number, col: number, horizontal: boolean): boolean => {
+    const size = SHIP_SIZES[type];
+    const cells: Array<{ row: number; col: number }> = [];
+    for (let i = 0; i < size; i++) {
+      const r = horizontal ? row : row + i;
+      const c = horizontal ? col + i : col;
+      if (r >= BOARD_SIZE || c >= BOARD_SIZE) return false;
+      cells.push({ row: r, col: c });
+    }
+    // Collision check
+    const occupied = new Set(placedShips.flatMap(s => s.cells.map(cell => `${cell.row},${cell.col}`)));
+    if (cells.some(cell => occupied.has(`${cell.row},${cell.col}`))) return false;
+
+    const ship: PlacedShip = {
+      id: `${type}-${Date.now()}`,
+      type,
+      size,
+      cells,
+      hits: 0,
+      sunk: false,
+    };
+    setPlacedShips(prev => [...prev, ship]);
+    return true;
+  }, [placedShips]);
+
+  const submitPlacement = useCallback(async () => {
+    if (!gameState) return;
+    await run(() => battleshipService.placeShips(address, gameState.gameId, placedShips));
+  }, [address, gameState, placedShips, run]);
+
+  const attack = useCallback(async (row: number, col: number) => {
+    if (!gameState) return;
+    // Optimistic update
+    setGameState(prev => {
+      if (!prev) return prev;
+      const board = prev.opponentBoard.map(r => [...r]) as BoardGrid;
+      board[row][col] = 'miss'; // will be corrected on next poll
+      return { ...prev, opponentBoard: board };
+    });
+    await run(() => battleshipService.attack(address, gameState.gameId, row, col));
+  }, [address, gameState, run]);
+
+  const refresh = useCallback(async (gameId: string) => {
+    const state = await run(() => battleshipService.getGameState(address, gameId));
+    if (state) setGameState(state);
+  }, [address, run]);
+
+  return {
+    gameState, loading, error, placedShips, isMyTurn,
+    createGame, joinGame, placeShip, submitPlacement, attack, refresh, setGameState,
+  };
 }
