@@ -1,251 +1,241 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
+import {
+  Box, Container, Heading, Text, VStack, HStack, Grid, GridItem,
+  Button, Input, InputGroup, InputRightElement, Divider, Badge,
+  Stat, StatLabel, StatNumber, StatHelpText, StatArrow,
+  Alert, AlertIcon, Skeleton, Progress, Tooltip, Flex,
+  useColorModeValue, useToast, NumberInput, NumberInputField,
+  NumberInputStepper, NumberIncrementStepper, NumberDecrementStepper,
+  Tab, Tabs, TabList, TabPanel, TabPanels, Card, CardBody,
+} from '@chakra-ui/react';
 import { useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
-import { stakingService } from '../../services/staking.service';
-import './staking-page.css';
+import { useStaking } from '../../hooks/useStaking';
 
-interface StakingInfo {
-  stakedAmount: string;
-  pendingRewards: string;
-  totalStaked: string;
-  rewardPool: string;
-  apr: number;
-}
+const APR = 20; // %
 
-const EMPTY: StakingInfo = {
-  stakedAmount: '0', pendingRewards: '0',
-  totalStaked: '0', rewardPool: '0', apr: 20,
-};
+export default function StakingPage() {
+  const { account } = useGetAccountInfo();
+  const toast = useToast();
+  const { stakeInfo, pendingRewards, totalStaked, rewardPool, loading, error, stake, unstake, claimRewards } = useStaking();
 
-export const StakingPage: React.FC = () => {
-  const { address } = useGetAccountInfo();
+  const [stakeAmount, setStakeAmount]   = useState('1');
+  const [unstakeAmount, setUnstakeAmount] = useState('1');
+  const [txPending, setTxPending]       = useState(false);
 
-  const [info, setInfo]           = useState<StakingInfo>(EMPTY);
-  const [loading, setLoading]     = useState(false);
-  const [stakeAmt, setStakeAmt]   = useState('');
-  const [unstakeAmt, setUnstakeAmt] = useState('');
-  const [txPending, setTxPending] = useState<string | null>(null); // 'stake'|'unstake'|'claim'
-  const [tab, setTab]             = useState<'stake' | 'unstake'>('stake');
+  const bg      = useColorModeValue('white', 'gray.800');
+  const heroBg  = useColorModeValue('blue.600', 'blue.900');
+  const statBg  = useColorModeValue('gray.50', 'gray.750');
 
-  const egld  = (v: string | number) => (Number(BigInt(String(v))) / 1e18).toFixed(4);
-  const egldF = (v: string)          => parseFloat(v) >= 0 ? egld(v) : '0.0000';
+  const egldStaked   = parseFloat(stakeInfo?.amount  ?? '0');
+  const egldPending  = parseFloat(pendingRewards      ?? '0');
+  const egldPool     = parseFloat(rewardPool          ?? '0');
+  const egldTotal    = parseFloat(totalStaked         ?? '0');
+  const yearlyEarning = egldStaked * (APR / 100);
 
-  const loadInfo = useCallback(async () => {
-    if (!address) return;
-    setLoading(true);
+  async function handleStake() {
+    if (!account?.address) return;
+    setTxPending(true);
     try {
-      const data = await stakingService.getStakingInfo(address);
-      setInfo(data);
-    } catch {
-      /* silently ignore if contract not deployed */
-    } finally {
-      setLoading(false);
-    }
-  }, [address]);
+      await stake(account.address, stakeAmount);
+      toast({ title: `Staked ${stakeAmount} EGLD`, status: 'success', duration: 4000 });
+    } catch (e: any) {
+      toast({ title: 'Stake failed', description: e?.message, status: 'error', duration: 5000 });
+    } finally { setTxPending(false); }
+  }
 
-  useEffect(() => { loadInfo(); }, [loadInfo]);
-
-  const handleStake = async () => {
-    if (!stakeAmt || !address) return;
-    setTxPending('stake');
+  async function handleUnstake() {
+    if (!account?.address) return;
+    setTxPending(true);
     try {
-      const wei = BigInt(Math.round(parseFloat(stakeAmt) * 1e18)).toString();
-      await stakingService.stake(wei);
-      setStakeAmt('');
-      await loadInfo();
-    } catch (e: any) { alert(e?.message); }
-    finally { setTxPending(null); }
-  };
+      await unstake(account.address, unstakeAmount);
+      toast({ title: `Unstaked ${unstakeAmount} EGLD`, status: 'success', duration: 4000 });
+    } catch (e: any) {
+      toast({ title: 'Unstake failed', description: e?.message, status: 'error', duration: 5000 });
+    } finally { setTxPending(false); }
+  }
 
-  const handleUnstake = async () => {
-    if (!unstakeAmt || !address) return;
-    setTxPending('unstake');
+  async function handleClaim() {
+    if (!account?.address) return;
+    setTxPending(true);
     try {
-      const wei = BigInt(Math.round(parseFloat(unstakeAmt) * 1e18)).toString();
-      await stakingService.unstake(wei);
-      setUnstakeAmt('');
-      await loadInfo();
-    } catch (e: any) { alert(e?.message); }
-    finally { setTxPending(null); }
-  };
-
-  const handleClaim = async () => {
-    if (!address) return;
-    setTxPending('claim');
-    try {
-      await stakingService.claimRewards();
-      await loadInfo();
-    } catch (e: any) { alert(e?.message); }
-    finally { setTxPending(null); }
-  };
-
-  const stakedEgld  = egldF(info.stakedAmount);
-  const pendingEgld = egldF(info.pendingRewards);
-  const totalEgld   = egldF(info.totalStaked);
-  const poolEgld    = egldF(info.rewardPool);
-  const sharePercent = info.totalStaked !== '0'
-    ? ((Number(BigInt(info.stakedAmount)) / Number(BigInt(info.totalStaked))) * 100).toFixed(2)
-    : '0.00';
+      await claimRewards(account.address);
+      toast({ title: `Claimed ${egldPending.toFixed(4)} EGLD`, status: 'success', duration: 4000 });
+    } catch (e: any) {
+      toast({ title: 'Claim failed', description: e?.message, status: 'error', duration: 5000 });
+    } finally { setTxPending(false); }
+  }
 
   return (
-    <div className="sp">
-      {/* Header */}
-      <header className="sp__header">
-        <div>
-          <h1 className="sp__title">💰 EGLD Staking</h1>
-          <p className="sp__subtitle">Blochează EGLD în pool pentru a primi recompense din meciuri</p>
-        </div>
-        <div className={`sp__apr-badge ${info.apr >= 20 ? 'sp__apr-badge--high' : ''}`}>
-          APR {info.apr}%
-        </div>
-      </header>
+    <Box>
+      {/* Hero */}
+      <Box bg={heroBg} color="white" py={{ base: 10, md: 16 }} px={4} textAlign="center">
+        <Container maxW="container.md">
+          <Text fontSize="4xl" mb={2}>⚓</Text>
+          <Heading size={{ base: 'xl', md: '2xl' }} mb={3}>Fleet Staking</Heading>
+          <Text color="whiteAlpha.800" maxW="460px" mx="auto">
+            Stake EGLD, earn {APR}% APR from game fees. Rewards accumulate every second.
+          </Text>
+        </Container>
+      </Box>
 
-      {/* Global stats */}
-      <div className="sp__global-stats">
-        <div className="sp-stat">
-          <span className="sp-stat__val">{totalEgld}</span>
-          <span className="sp-stat__lbl">Total Staked EGLD</span>
-        </div>
-        <div className="sp-stat">
-          <span className="sp-stat__val">{poolEgld}</span>
-          <span className="sp-stat__lbl">Reward Pool EGLD</span>
-        </div>
-        <div className="sp-stat">
-          <span className="sp-stat__val">{info.apr}%</span>
-          <span className="sp-stat__lbl">APR</span>
-        </div>
-      </div>
+      <Container maxW="container.xl" py={8}>
+        {error && <Alert status="error" mb={4} borderRadius="lg"><AlertIcon />{error}</Alert>}
 
-      {!address ? (
-        <div className="sp__connect">
-          <p>Conectează wallet-ul MultiversX pentru a putea stake.</p>
-        </div>
-      ) : (
-        <div className="sp__body">
-          {/* My position card */}
-          <div className="sp__position">
-            <h2 className="sp__section-title">Poziția Ta</h2>
-            <div className="position-grid">
-              <div className="position-item">
-                <span className="position-item__val">{stakedEgld}</span>
-                <span className="position-item__lbl">EGLD Staked</span>
-              </div>
-              <div className="position-item position-item--rewards">
-                <span className="position-item__val">{pendingEgld}</span>
-                <span className="position-item__lbl">Recompense pending</span>
-              </div>
-              <div className="position-item">
-                <span className="position-item__val">{sharePercent}%</span>
-                <span className="position-item__lbl">Cotă pool</span>
-              </div>
-            </div>
+        {/* Global stats */}
+        <Grid templateColumns={{ base: '1fr 1fr', md: 'repeat(4, 1fr)' }} gap={4} mb={8}>
+          {[
+            { label: 'Total Staked',  value: `${egldTotal.toFixed(2)} EGLD`, icon: '🔒' },
+            { label: 'Reward Pool',   value: `${egldPool.toFixed(2)} EGLD`,  icon: '💰' },
+            { label: 'Current APR',   value: `${APR}%`,                       icon: '📈' },
+            { label: 'Your Rewards',  value: `${egldPending.toFixed(4)} EGLD`, icon: '🎁' },
+          ].map(s => (
+            <Skeleton key={s.label} isLoaded={!loading} borderRadius="xl">
+              <Box bg={statBg} borderRadius="xl" p={5} border="1px" borderColor={useColorModeValue('gray.200','gray.700')}>
+                <Text fontSize="xl" mb={1}>{s.icon}</Text>
+                <Text fontSize="xs" color="gray.500" textTransform="uppercase" letterSpacing="wide">{s.label}</Text>
+                <Text fontSize="xl" fontWeight="bold" mt={1}>{s.value}</Text>
+              </Box>
+            </Skeleton>
+          ))}
+        </Grid>
 
-            {/* Claim button */}
-            {parseFloat(pendingEgld) > 0 && (
-              <button
-                className="btn btn--claim"
-                disabled={txPending === 'claim'}
-                onClick={handleClaim}
-              >
-                {txPending === 'claim'
-                  ? 'Se revendică...'
-                  : `⚡ Claim ${pendingEgld} EGLD`}
-              </button>
-            )}
-          </div>
+        <Grid templateColumns={{ base: '1fr', lg: '1fr 1fr' }} gap={8}>
+          {/* Left — Actions */}
+          <Box>
+            <Tabs colorScheme="blue" variant="soft-rounded">
+              <TabList mb={4} gap={2}>
+                <Tab>⬆️ Stake</Tab>
+                <Tab>⬇️ Unstake</Tab>
+              </TabList>
+              <TabPanels>
+                {/* Stake */}
+                <TabPanel px={0}>
+                  <Box bg={bg} borderRadius="xl" p={6} border="1px" borderColor={useColorModeValue('gray.200','gray.700')}>
+                    <Text fontSize="sm" color="gray.500" mb={1}>Amount (EGLD)</Text>
+                    <NumberInput min={0.001} step={0.1} value={stakeAmount} onChange={setStakeAmount} mb={4}>
+                      <NumberInputField borderRadius="lg" fontSize="lg" fontWeight="semibold" />
+                      <NumberInputStepper><NumberIncrementStepper /><NumberDecrementStepper /></NumberInputStepper>
+                    </NumberInput>
+                    <HStack justify="space-between" mb={4} fontSize="sm" color="gray.500">
+                      <Text>Yearly earning</Text>
+                      <Text fontWeight="semibold" color="green.400">
+                        +{(parseFloat(stakeAmount || '0') * APR / 100).toFixed(4)} EGLD
+                      </Text>
+                    </HStack>
+                    <Button
+                      colorScheme="blue" w="full" size="lg" borderRadius="lg"
+                      isLoading={txPending} onClick={handleStake}
+                    >
+                      Stake EGLD
+                    </Button>
+                  </Box>
+                </TabPanel>
 
-          {/* Stake / Unstake panel */}
-          <div className="sp__panel">
-            <div className="sp__tabs">
-              <button
-                className={`sp-tab ${tab === 'stake' ? 'sp-tab--active' : ''}`}
-                onClick={() => setTab('stake')}
-              >Stake</button>
-              <button
-                className={`sp-tab ${tab === 'unstake' ? 'sp-tab--active' : ''}`}
-                onClick={() => setTab('unstake')}
-              >Unstake</button>
-            </div>
-
-            {tab === 'stake' && (
-              <div className="sp__form">
-                <label className="sp__form-label">
-                  Cantitate EGLD
-                  <div className="sp__input-wrap">
-                    <input
-                      className="sp__input"
-                      type="number"
-                      min="0.001"
-                      step="0.1"
-                      placeholder="0.00"
-                      value={stakeAmt}
-                      onChange={e => setStakeAmt(e.target.value)}
+                {/* Unstake */}
+                <TabPanel px={0}>
+                  <Box bg={bg} borderRadius="xl" p={6} border="1px" borderColor={useColorModeValue('gray.200','gray.700')}>
+                    <HStack justify="space-between" mb={2}>
+                      <Text fontSize="sm" color="gray.500">Amount (EGLD)</Text>
+                      <Button size="xs" variant="ghost" onClick={() => setUnstakeAmount(String(egldStaked))}>Max</Button>
+                    </HStack>
+                    <NumberInput min={0.001} max={egldStaked} step={0.1} value={unstakeAmount} onChange={setUnstakeAmount} mb={4}>
+                      <NumberInputField borderRadius="lg" fontSize="lg" fontWeight="semibold" />
+                      <NumberInputStepper><NumberIncrementStepper /><NumberDecrementStepper /></NumberInputStepper>
+                    </NumberInput>
+                    <Progress
+                      value={(parseFloat(unstakeAmount || '0') / Math.max(egldStaked, 0.001)) * 100}
+                      colorScheme="orange" size="sm" borderRadius="full" mb={4}
                     />
-                    <span className="sp__input-suffix">EGLD</span>
-                  </div>
-                </label>
-                <div className="sp__form-hint">
-                  Recompensele se calculează continuu. Minimum nu este impus.
-                </div>
-                <button
-                  className="btn btn--primary btn--full"
-                  disabled={!stakeAmt || txPending === 'stake'}
-                  onClick={handleStake}
-                >
-                  {txPending === 'stake' ? 'Se trimite...' : `Stake ${stakeAmt || '0'} EGLD`}
-                </button>
-              </div>
-            )}
+                    <Button
+                      colorScheme="orange" w="full" size="lg" borderRadius="lg"
+                      isLoading={txPending} onClick={handleUnstake}
+                    >
+                      Unstake EGLD
+                    </Button>
+                  </Box>
+                </TabPanel>
+              </TabPanels>
+            </Tabs>
+          </Box>
 
-            {tab === 'unstake' && (
-              <div className="sp__form">
-                <label className="sp__form-label">
-                  Cantitate de retras
-                  <div className="sp__input-wrap">
-                    <input
-                      className="sp__input"
-                      type="number"
-                      min="0.001"
-                      step="0.1"
-                      placeholder="0.00"
-                      value={unstakeAmt}
-                      onChange={e => setUnstakeAmt(e.target.value)}
-                    />
-                    <span className="sp__input-suffix">EGLD</span>
-                  </div>
-                </label>
-                <button
-                  className="btn btn--ghost-red btn--full"
-                  onClick={() => setUnstakeAmt(stakedEgld)}
-                >Max: {stakedEgld} EGLD</button>
-                <div className="sp__form-hint">
-                  Unstake-ul face auto-claim al recompenselor pending.
-                </div>
-                <button
-                  className="btn btn--danger btn--full"
-                  disabled={!unstakeAmt || txPending === 'unstake'}
-                  onClick={handleUnstake}
-                >
-                  {txPending === 'unstake' ? 'Se retrage...' : `Retrage ${unstakeAmt || '0'} EGLD`}
-                </button>
-              </div>
-            )}
-          </div>
+          {/* Right — My position */}
+          <Box>
+            <Skeleton isLoaded={!loading} borderRadius="xl">
+              <Box bg={bg} borderRadius="xl" p={6} border="1px" borderColor={useColorModeValue('gray.200','gray.700')} h="full">
+                <Heading size="sm" mb={5}>📊 My Position</Heading>
 
-          {/* APR explainer */}
-          <div className="sp__explainer">
-            <h3>💡 Cum funcționează?</h3>
-            <ul>
-              <li>Mecițurilede battleship alimentează pool-ul cu o cotă din fiecare pariu.</li>
-              <li>Recompensele se calculează <strong>continuu</strong> proporțional cu cota ta din pool.</li>
-              <li>Formula: <code>reward = staked × APR × elapsed / 365 days</code></li>
-              <li>APR curent: <strong>{info.apr}%</strong> pe an, ajustat de owner.</li>
-              <li>Unstake-ul automat face claim, deci nu pierzi recompensele acumulate.</li>
-            </ul>
-          </div>
-        </div>
-      )}
-    </div>
+                <VStack spacing={4} align="stretch">
+                  <Flex justify="space-between">
+                    <Text color="gray.500">Staked</Text>
+                    <Text fontWeight="bold">{egldStaked.toFixed(4)} EGLD</Text>
+                  </Flex>
+                  <Divider />
+                  <Flex justify="space-between">
+                    <Text color="gray.500">Pending Rewards</Text>
+                    <Text fontWeight="bold" color="green.400">{egldPending.toFixed(6)} EGLD</Text>
+                  </Flex>
+                  <Divider />
+                  <Flex justify="space-between">
+                    <Text color="gray.500">Yearly Earning</Text>
+                    <Text fontWeight="bold" color="blue.400">+{yearlyEarning.toFixed(4)} EGLD</Text>
+                  </Flex>
+                  <Divider />
+                  <Flex justify="space-between">
+                    <Text color="gray.500">Pool Share</Text>
+                    <Text fontWeight="bold">
+                      {egldTotal > 0 ? ((egldStaked / egldTotal) * 100).toFixed(2) : '0.00'}%
+                    </Text>
+                  </Flex>
+
+                  <Progress
+                    value={egldTotal > 0 ? (egldStaked / egldTotal) * 100 : 0}
+                    colorScheme="blue" size="sm" borderRadius="full"
+                  />
+
+                  <Button
+                    colorScheme="green" w="full" size="lg" borderRadius="lg"
+                    isLoading={txPending}
+                    isDisabled={egldPending < 0.000001}
+                    onClick={handleClaim}
+                  >
+                    🎁 Claim {egldPending.toFixed(4)} EGLD
+                  </Button>
+
+                  {stakeInfo?.since && (
+                    <Text fontSize="xs" color="gray.400" textAlign="center">
+                      Staking since block #{stakeInfo.since}
+                    </Text>
+                  )}
+                </VStack>
+              </Box>
+            </Skeleton>
+          </Box>
+        </Grid>
+
+        {/* Info box */}
+        <Box mt={8} bg={statBg} borderRadius="xl" p={6} border="1px" borderColor={useColorModeValue('gray.200','gray.700')}>
+          <Heading size="sm" mb={3}>ℹ️ How it works</Heading>
+          <Grid templateColumns={{ base: '1fr', md: 'repeat(3,1fr)' }} gap={4}>
+            {[
+              { step: '1', title: 'Stake EGLD', desc: 'Lock your EGLD in the reward pool contract.' },
+              { step: '2', title: 'Earn Rewards', desc: `${APR}% APR distributed from game entry fees, compounding every second.` },
+              { step: '3', title: 'Claim Anytime', desc: 'Withdraw rewards or unstake at any time with no lock period.' },
+            ].map(item => (
+              <HStack key={item.step} align="start" spacing={3}>
+                <Box
+                  bg="blue.500" color="white" borderRadius="full"
+                  w={7} h={7} display="flex" alignItems="center" justifyContent="center"
+                  flexShrink={0} fontWeight="bold" fontSize="sm"
+                >{item.step}</Box>
+                <Box>
+                  <Text fontWeight="semibold" fontSize="sm">{item.title}</Text>
+                  <Text fontSize="xs" color="gray.500">{item.desc}</Text>
+                </Box>
+              </HStack>
+            ))}
+          </Grid>
+        </Box>
+      </Container>
+    </Box>
   );
-};
-
-export default StakingPage;
+}

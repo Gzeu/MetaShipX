@@ -1,318 +1,272 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Box, Container, VStack, HStack, Heading, Text, Button,
-  SimpleGrid, Badge, useToast, Spinner, Flex,
-  Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton,
-  useDisclosure, Image, Progress, Divider, Tabs, TabList, Tab, TabPanels, TabPanel,
-  Stat, StatLabel, StatNumber,
-  NumberInput, NumberInputField, NumberInputStepper, NumberIncrementStepper, NumberDecrementStepper,
-  Alert, AlertIcon, Select,
+  Box, Container, Heading, Text, VStack, HStack, Grid,
+  Button, Badge, Flex, Tabs, TabList, Tab, TabPanels, TabPanel,
+  Skeleton, Alert, AlertIcon, Modal, ModalOverlay, ModalContent,
+  ModalHeader, ModalCloseButton, ModalBody, ModalFooter,
+  useDisclosure, useColorModeValue, useToast, Progress,
+  Stat, StatLabel, StatNumber, Divider, Tag,
 } from '@chakra-ui/react';
-import { useGetAccountInfo, useGetIsLoggedIn } from '@multiversx/sdk-dapp/hooks';
-import { useNft } from '../hooks/useNft';
+import { useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
+import { mintShip, upgradeShip, getUserShips, getMintPrice, ShipMetadata } from '../services/nft.service';
 
 const SHIP_TYPES = [
-  { id: 0, name: 'Destroyer', emoji: '🚤', size: 2, description: 'Rapid și agil. Ideal pentru atac fulger.', rarity: 'Common', color: 'gray' },
-  { id: 1, name: 'Submarine', emoji: '🤿', size: 3, description: 'Operat invizibil. Atacuri surpriză.', rarity: 'Uncommon', color: 'blue' },
-  { id: 2, name: 'Cruiser', emoji: '⛵', size: 3, description: 'Versatil și robust. Echibruat în orice situație.', rarity: 'Uncommon', color: 'cyan' },
-  { id: 3, name: 'Battleship', emoji: '🛳️', size: 4, description: 'Forța brutală a flotei. Greu de distrus.', rarity: 'Rare', color: 'purple' },
-  { id: 4, name: 'Carrier', emoji: '✈️', size: 5, description: 'Nava amiral. Comandă întreaga flotă.', rarity: 'Legendary', color: 'yellow' },
+  { id: 0, name: 'Destroyer',  size: 2, emoji: '🚤', rarity: 'Common',    color: 'gray'   },
+  { id: 1, name: 'Submarine',  size: 3, emoji: '🤿', rarity: 'Common',    color: 'gray'   },
+  { id: 2, name: 'Cruiser',    size: 3, emoji: '⚓', rarity: 'Rare',      color: 'blue'   },
+  { id: 3, name: 'Battleship', size: 4, emoji: '🛳', rarity: 'Epic',      color: 'purple' },
+  { id: 4, name: 'Carrier',    size: 5, emoji: '✈️', rarity: 'Legendary', color: 'yellow' },
 ];
 
-const RARITY_COLORS: Record<string, string> = {
-  Common: 'gray', Uncommon: 'blue', Rare: 'purple', Legendary: 'yellow',
+const RARITY_PRICE: Record<string, string> = {
+  Common: '0.05', Rare: '0.1', Epic: '0.25', Legendary: '0.5',
 };
 
-const MINT_PRICE_EGLD: Record<number, number> = {
-  0: 0.05, 1: 0.08, 2: 0.08, 3: 0.15, 4: 0.30,
-};
+function ShipCard({ ship, onUpgrade }: { ship: ShipMetadata; onUpgrade: (s: ShipMetadata) => void }) {
+  const bg     = useColorModeValue('white', 'gray.800');
+  const border = useColorModeValue('gray.200', 'gray.700');
+  const meta   = SHIP_TYPES.find(t => t.name === ship.shipType) ?? SHIP_TYPES[0];
+  const xpPct  = ((ship.wins ?? 0) / Math.max((ship.level ?? 1) * 5, 5)) * 100;
 
-interface ShipNft {
-  nonce: number;
-  shipType: number;
-  name: string;
-  level: number;
-  wins: number;
-  owner: string;
+  return (
+    <Box bg={bg} borderRadius="xl" p={5} border="1px" borderColor={border}
+      _hover={{ shadow: 'md', transform: 'translateY(-2px)' }} transition="all 0.2s"
+    >
+      <Flex justify="space-between" align="start" mb={3}>
+        <Text fontSize="3xl">{meta.emoji}</Text>
+        <Badge colorScheme={meta.color} fontSize="xs">{meta.rarity}</Badge>
+      </Flex>
+      <Heading size="sm" mb={1}>{ship.name || meta.name}</Heading>
+      <Text fontSize="xs" color="gray.500" mb={3}>#{ship.nonce} · Level {ship.level ?? 1} · {meta.size} cells</Text>
+
+      <HStack spacing={2} mb={2}>
+        <Text fontSize="xs" color="gray.500">XP</Text>
+        <Progress value={Math.min(xpPct, 100)} size="xs" colorScheme="blue" flex={1} borderRadius="full" />
+        <Text fontSize="xs">{ship.wins ?? 0} wins</Text>
+      </HStack>
+
+      <Divider my={3} />
+
+      <Flex justify="space-between" align="center">
+        <VStack spacing={0} align="start">
+          <Text fontSize="xs" color="gray.500">Upgrade cost</Text>
+          <Text fontSize="sm" fontWeight="bold">{(parseFloat(RARITY_PRICE[meta.rarity]) * (ship.level ?? 1)).toFixed(3)} EGLD</Text>
+        </VStack>
+        <Button size="sm" colorScheme="blue" onClick={() => onUpgrade(ship)}
+          isDisabled={(ship.level ?? 1) >= 10}>
+          {(ship.level ?? 1) >= 10 ? '✨ Max' : '⬆ Upgrade'}
+        </Button>
+      </Flex>
+    </Box>
+  );
+}
+
+function MintCard({ shipType }: { shipType: typeof SHIP_TYPES[0] }) {
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const { account } = useGetAccountInfo();
+  const toast = useToast();
+  const [minting, setMinting] = useState(false);
+  const bg     = useColorModeValue('white', 'gray.800');
+  const border = useColorModeValue('gray.200', 'gray.700');
+
+  async function handleMint() {
+    if (!account?.address) return;
+    setMinting(true);
+    try {
+      await mintShip(account.address, shipType.id, `${shipType.name} #${Date.now().toString().slice(-4)}`);
+      toast({ title: `${shipType.name} minted!`, status: 'success', duration: 4000 });
+      onClose();
+    } catch (e: any) {
+      toast({ title: 'Mint failed', description: e?.message, status: 'error', duration: 5000 });
+    } finally { setMinting(false); }
+  }
+
+  return (
+    <>
+      <Box bg={bg} borderRadius="xl" p={5} border="1px" borderColor={border}
+        _hover={{ shadow: 'md', transform: 'translateY(-2px)' }} transition="all 0.2s" cursor="pointer" onClick={onOpen}
+      >
+        <Flex justify="space-between" align="start" mb={3}>
+          <Text fontSize="3xl">{shipType.emoji}</Text>
+          <Badge colorScheme={shipType.color} fontSize="xs">{shipType.rarity}</Badge>
+        </Flex>
+        <Heading size="sm" mb={1}>{shipType.name}</Heading>
+        <Text fontSize="xs" color="gray.500" mb={3}>{shipType.size} cells · SFT on MultiversX</Text>
+        <Divider my={3} />
+        <Flex justify="space-between" align="center">
+          <VStack spacing={0} align="start">
+            <Text fontSize="xs" color="gray.500">Mint price</Text>
+            <Text fontSize="sm" fontWeight="bold">{RARITY_PRICE[shipType.rarity]} EGLD</Text>
+          </VStack>
+          <Button size="sm" colorScheme={shipType.color}>Mint</Button>
+        </Flex>
+      </Box>
+
+      <Modal isOpen={isOpen} onClose={onClose} isCentered>
+        <ModalOverlay backdropFilter="blur(4px)" />
+        <ModalContent>
+          <ModalHeader>{shipType.emoji} Mint {shipType.name}</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <VStack spacing={4} align="stretch">
+              <HStack justify="space-between">
+                <Text color="gray.500">Rarity</Text>
+                <Badge colorScheme={shipType.color}>{shipType.rarity}</Badge>
+              </HStack>
+              <HStack justify="space-between">
+                <Text color="gray.500">Size</Text>
+                <Text fontWeight="bold">{shipType.size} cells</Text>
+              </HStack>
+              <HStack justify="space-between">
+                <Text color="gray.500">Max level</Text>
+                <Text fontWeight="bold">10</Text>
+              </HStack>
+              <HStack justify="space-between">
+                <Text color="gray.500">Token type</Text>
+                <Text fontWeight="bold">SFT (ESDT)</Text>
+              </HStack>
+              <Divider />
+              <HStack justify="space-between">
+                <Text fontWeight="bold">Total cost</Text>
+                <Text fontWeight="bold" fontSize="lg" color="blue.400">{RARITY_PRICE[shipType.rarity]} EGLD</Text>
+              </HStack>
+            </VStack>
+          </ModalBody>
+          <ModalFooter gap={3}>
+            <Button onClick={onClose} variant="ghost">Cancel</Button>
+            <Button colorScheme={shipType.color} isLoading={minting} onClick={handleMint}>
+              Confirm Mint
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+    </>
+  );
 }
 
 export default function MarketplacePage() {
-  const { address } = useGetAccountInfo();
-  const isLoggedIn = useGetIsLoggedIn();
+  const { account } = useGetAccountInfo();
   const toast = useToast();
-  const { isOpen: isMintOpen, onOpen: onMintOpen, onClose: onMintClose } = useDisclosure();
-  const { isOpen: isUpgradeOpen, onOpen: onUpgradeOpen, onClose: onUpgradeClose } = useDisclosure();
+  const [myShips, setMyShips]       = useState<ShipMetadata[]>([]);
+  const [loadingShips, setLoading]  = useState(false);
+  const [upgrading, setUpgrading]   = useState(false);
+  const [selectedShip, setSelected] = useState<ShipMetadata | null>(null);
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const heroBg = useColorModeValue('purple.700', 'purple.900');
 
-  const { userShips, mintShip, upgradeShip, mintPrice, isLoading, refetch } = useNft();
+  useEffect(() => {
+    if (!account?.address) return;
+    setLoading(true);
+    getUserShips(account.address)
+      .then(setMyShips)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [account?.address]);
 
-  const [selectedType, setSelectedType] = useState(0);
-  const [selectedShip, setSelectedShip] = useState<ShipNft | null>(null);
-  const [shipName, setShipName] = useState('');
-  const [txLoading, setTxLoading] = useState(false);
+  function handleUpgrade(ship: ShipMetadata) {
+    setSelected(ship);
+    onOpen();
+  }
 
-  const handleMint = async () => {
-    if (!shipName.trim()) { toast({ title: 'Introdu un nume pentru navă', status: 'warning' }); return; }
-    setTxLoading(true);
+  async function confirmUpgrade() {
+    if (!selectedShip || !account?.address) return;
+    setUpgrading(true);
     try {
-      await mintShip(selectedType, shipName.trim());
-      toast({ title: '✅ Navă mintată!', description: `${SHIP_TYPES[selectedType].emoji} ${shipName} a fost adăugată colecției tale`, status: 'success', duration: 5000 });
-      await refetch();
-      onMintClose();
-      setShipName('');
+      await upgradeShip(account.address, selectedShip.nonce);
+      toast({ title: 'Ship upgraded!', status: 'success', duration: 4000 });
+      const updated = await getUserShips(account.address);
+      setMyShips(updated);
+      onClose();
     } catch (e: any) {
-      toast({ title: 'Eroare mint', description: e.message, status: 'error' });
-    } finally { setTxLoading(false); }
-  };
-
-  const handleUpgrade = async () => {
-    if (!selectedShip) return;
-    setTxLoading(true);
-    try {
-      await upgradeShip(selectedShip.nonce);
-      toast({ title: '⬆️ Upgrade reușit!', description: `Nava a atins level ${selectedShip.level + 1}`, status: 'success' });
-      await refetch();
-      onUpgradeClose();
-    } catch (e: any) {
-      toast({ title: 'Eroare upgrade', description: e.message, status: 'error' });
-    } finally { setTxLoading(false); }
-  };
-
-  const openUpgrade = (ship: ShipNft) => {
-    setSelectedShip(ship);
-    onUpgradeOpen();
-  };
-
-  const upgradePrice = selectedShip ? (MINT_PRICE_EGLD[selectedShip.shipType] * selectedShip.level).toFixed(3) : '0';
+      toast({ title: 'Upgrade failed', description: e?.message, status: 'error', duration: 5000 });
+    } finally { setUpgrading(false); }
+  }
 
   return (
-    <Container maxW="container.xl" py={8}>
-      <VStack spacing={8} align="stretch">
-        {/* Header */}
-        <HStack justify="space-between" flexWrap="wrap" gap={4}>
-          <VStack align="start" spacing={1}>
-            <Heading size="xl" bgGradient="linear(to-r, purple.400, pink.400)" bgClip="text">🛒 NFT Shipyard</Heading>
-            <Text color="gray.400">Mintează nave SFT pe MultiversX. Upgradeează și câștigă victorii.</Text>
-          </VStack>
-          <Button colorScheme="purple" size="lg" onClick={() => { setSelectedType(0); onMintOpen(); }} isDisabled={!isLoggedIn}>
-            ⚓ Mint Navă
-          </Button>
-        </HStack>
+    <Box>
+      <Box bg={heroBg} color="white" py={{ base: 10, md: 16 }} px={4} textAlign="center">
+        <Container maxW="container.md">
+          <Text fontSize="4xl" mb={2}>⚔️</Text>
+          <Heading size={{ base: 'xl', md: '2xl' }} mb={3}>Ship Marketplace</Heading>
+          <Text color="whiteAlpha.800" maxW="460px" mx="auto">
+            Mint your fleet as SFT tokens on MultiversX. Upgrade ships to increase their power.
+          </Text>
+        </Container>
+      </Box>
 
-        <Tabs variant="enclosed" colorScheme="purple">
-          <TabList>
-            <Tab>🏪 Catalog Nave</Tab>
-            <Tab>🎒 Colecția Mea {userShips?.length ? `(${userShips.length})` : ''}</Tab>
+      <Container maxW="container.xl" py={8}>
+        <Tabs colorScheme="purple" variant="soft-rounded">
+          <TabList mb={6} gap={2}>
+            <Tab>🛒 Mint Ships</Tab>
+            <Tab>🚢 My Fleet ({myShips.length})</Tab>
           </TabList>
           <TabPanels>
-            {/* CATALOG */}
+            {/* Mint */}
             <TabPanel px={0}>
-              <SimpleGrid columns={{ base: 1, sm: 2, lg: 3 }} spacing={6}>
-                {SHIP_TYPES.map(ship => (
-                  <Box
-                    key={ship.id}
-                    borderRadius="2xl" overflow="hidden"
-                    bg="gray.800" border="1px" borderColor="gray.700"
-                    shadow="lg" transition="all 0.2s"
-                    _hover={{ transform: 'translateY(-4px)', shadow: '2xl', borderColor: `${ship.color}.500` }}
-                  >
-                    <Flex
-                      h="140px" justify="center" align="center" fontSize="6xl"
-                      bgGradient={`linear(to-br, ${ship.color}.900, gray.900)`}
-                    >
-                      {ship.emoji}
-                    </Flex>
-                    <Box p={5}>
-                      <HStack justify="space-between" mb={2}>
-                        <Heading size="md" color="white">{ship.name}</Heading>
-                        <Badge colorScheme={RARITY_COLORS[ship.rarity]} variant="solid">{ship.rarity}</Badge>
-                      </HStack>
-                      <Text color="gray.400" fontSize="sm" mb={3}>{ship.description}</Text>
-                      <HStack spacing={4} mb={4}>
-                        <Box textAlign="center">
-                          <Text color="gray.500" fontSize="xs">Dimensiune</Text>
-                          <Text fontWeight="bold" color="cyan.300">{ship.size} celule</Text>
-                        </Box>
-                        <Box textAlign="center">
-                          <Text color="gray.500" fontSize="xs">Preț mint</Text>
-                          <Text fontWeight="bold" color="green.300">{MINT_PRICE_EGLD[ship.id]} EGLD</Text>
-                        </Box>
-                      </HStack>
-                      <Button
-                        colorScheme={ship.color === 'gray' ? 'whiteAlpha' : ship.color as any}
-                        w="full" size="sm"
-                        onClick={() => { setSelectedType(ship.id); onMintOpen(); }}
-                        isDisabled={!isLoggedIn}
-                      >
-                        ⚓ Mint {ship.name}
-                      </Button>
-                    </Box>
-                  </Box>
-                ))}
-              </SimpleGrid>
+              <Grid templateColumns={{ base: '1fr', sm: 'repeat(2,1fr)', md: 'repeat(3,1fr)', lg: 'repeat(5,1fr)' }} gap={4}>
+                {SHIP_TYPES.map(t => <MintCard key={t.id} shipType={t} />)}
+              </Grid>
             </TabPanel>
 
-            {/* MY SHIPS */}
+            {/* My Fleet */}
             <TabPanel px={0}>
-              {isLoading ? (
-                <Flex justify="center" py={16}><Spinner color="purple.400" size="xl" /></Flex>
-              ) : !isLoggedIn ? (
-                <Flex justify="center" py={16}><Text color="gray.500">Conectează-te pentru a vedea colecția</Text></Flex>
-              ) : !userShips?.length ? (
-                <VStack spacing={4} py={16} textAlign="center">
-                  <Text fontSize="4xl">⚓</Text>
-                  <Heading size="md" color="gray.500">Flota ta e goală</Heading>
-                  <Text color="gray.600">Mintează prima navă pentru a începe.</Text>
-                  <Button colorScheme="purple" onClick={() => { setSelectedType(0); onMintOpen(); }}>⚓ Mint Prima Navă</Button>
+              {loadingShips ? (
+                <Grid templateColumns={{ base: '1fr', sm: 'repeat(2,1fr)', md: 'repeat(3,1fr)' }} gap={4}>
+                  {[1,2,3].map(i => <Skeleton key={i} h="200px" borderRadius="xl" />)}
+                </Grid>
+              ) : myShips.length === 0 ? (
+                <VStack py={16} spacing={3}>
+                  <Text fontSize="3xl">⚓</Text>
+                  <Heading size="sm" color="gray.500">No ships yet</Heading>
+                  <Text color="gray.400" fontSize="sm">Mint your first ship from the Mint tab</Text>
                 </VStack>
               ) : (
-                <SimpleGrid columns={{ base: 1, sm: 2, lg: 3 }} spacing={6}>
-                  {(userShips as ShipNft[]).map(ship => {
-                    const type = SHIP_TYPES[ship.shipType] || SHIP_TYPES[0];
-                    return (
-                      <Box
-                        key={ship.nonce}
-                        borderRadius="2xl" overflow="hidden"
-                        bg="gray.800" border="1px" borderColor="gray.700" shadow="lg"
-                      >
-                        <Flex
-                          h="100px" justify="center" align="center" fontSize="5xl"
-                          bgGradient={`linear(to-br, ${type.color}.900, gray.900)`}
-                          position="relative"
-                        >
-                          {type.emoji}
-                          <Badge
-                            position="absolute" top={2} right={2}
-                            colorScheme="yellow" variant="solid"
-                          >Lv.{ship.level}</Badge>
-                        </Flex>
-                        <Box p={4}>
-                          <HStack justify="space-between" mb={1}>
-                            <Text fontWeight="bold" color="white">{ship.name}</Text>
-                            <Badge colorScheme={RARITY_COLORS[type.rarity]}>{type.rarity}</Badge>
-                          </HStack>
-                          <Text color="gray.400" fontSize="xs" mb={3}>{type.name} · Nonce #{ship.nonce}</Text>
-                          <SimpleGrid columns={2} spacing={2} mb={4}>
-                            <Stat size="sm">
-                              <StatLabel color="gray.500">Victorii</StatLabel>
-                              <StatNumber color="yellow.300" fontSize="lg">{ship.wins}</StatNumber>
-                            </Stat>
-                            <Stat size="sm">
-                              <StatLabel color="gray.500">Level</StatLabel>
-                              <StatNumber color="cyan.300" fontSize="lg">{ship.level}/10</StatNumber>
-                            </Stat>
-                          </SimpleGrid>
-                          <Progress value={ship.level * 10} colorScheme="cyan" borderRadius="full" size="xs" mb={3} />
-                          <Button
-                            colorScheme="purple" variant="outline" w="full" size="sm"
-                            onClick={() => openUpgrade(ship)}
-                            isDisabled={ship.level >= 10}
-                          >
-                            {ship.level >= 10 ? '✨ Max Level' : `⬆️ Upgrade (${(MINT_PRICE_EGLD[ship.shipType] * ship.level).toFixed(3)} EGLD)`}
-                          </Button>
-                        </Box>
-                      </Box>
-                    );
-                  })}
-                </SimpleGrid>
+                <Grid templateColumns={{ base: '1fr', sm: 'repeat(2,1fr)', md: 'repeat(3,1fr)', lg: 'repeat(4,1fr)' }} gap={4}>
+                  {myShips.map(s => <ShipCard key={s.nonce} ship={s} onUpgrade={handleUpgrade} />)}
+                </Grid>
               )}
             </TabPanel>
           </TabPanels>
         </Tabs>
-      </VStack>
+      </Container>
 
-      {/* MINT MODAL */}
-      <Modal isOpen={isMintOpen} onClose={onMintClose} isCentered size="md">
-        <ModalOverlay backdropFilter="blur(8px)" />
-        <ModalContent bg="gray.800" border="1px" borderColor="gray.700">
-          <ModalHeader color="white">⚓ Mint {SHIP_TYPES[selectedType]?.name}</ModalHeader>
-          <ModalCloseButton color="gray.400" />
-          <ModalBody>
-            <VStack spacing={4}>
-              <Flex w="full" h="100px" justify="center" align="center" fontSize="5xl"
-                borderRadius="xl" bgGradient={`linear(to-br, ${SHIP_TYPES[selectedType]?.color}.900, gray.900)`}>
-                {SHIP_TYPES[selectedType]?.emoji}
-              </Flex>
-              <Box w="full">
-                <Text color="gray.400" fontSize="sm" mb={1}>Selectează tipul</Text>
-                <Select
-                  bg="gray.900" value={selectedType}
-                  onChange={e => setSelectedType(Number(e.target.value))}
-                >
-                  {SHIP_TYPES.map(s => (
-                    <option key={s.id} value={s.id}>{s.emoji} {s.name} — {MINT_PRICE_EGLD[s.id]} EGLD</option>
-                  ))}
-                </Select>
-              </Box>
-              <Box w="full">
-                <Text color="gray.400" fontSize="sm" mb={1}>Nume navă</Text>
-                <NumberInput isRequired={false} />
-                <input
-                  style={{ width: '100%', background: '#1a202c', border: '1px solid #4a5568', borderRadius: '6px', padding: '8px 12px', color: 'white', fontSize: '14px' }}
-                  placeholder="ex: HMS Neptun, Shadow Wolf..."
-                  value={shipName}
-                  onChange={e => setShipName(e.target.value)}
-                  maxLength={50}
-                />
-              </Box>
-              <Alert status="info" borderRadius="lg" bg="blue.900" w="full">
-                <AlertIcon />
-                <VStack align="start" spacing={0}>
-                  <Text fontSize="sm" fontWeight="bold">Cost: {MINT_PRICE_EGLD[selectedType]} EGLD</Text>
-                  <Text fontSize="xs" color="gray.300">{SHIP_TYPES[selectedType]?.description}</Text>
-                </VStack>
-              </Alert>
-            </VStack>
-          </ModalBody>
-          <ModalFooter gap={3}>
-            <Button variant="ghost" onClick={onMintClose} color="gray.400">Anulează</Button>
-            <Button colorScheme="purple" onClick={handleMint} isLoading={txLoading} isDisabled={!shipName.trim()}>
-              ⚓ Mintează
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
-      {/* UPGRADE MODAL */}
-      <Modal isOpen={isUpgradeOpen} onClose={onUpgradeClose} isCentered size="md">
-        <ModalOverlay backdropFilter="blur(8px)" />
-        <ModalContent bg="gray.800" border="1px" borderColor="gray.700">
-          <ModalHeader color="white">⬆️ Upgrade {selectedShip?.name}</ModalHeader>
-          <ModalCloseButton color="gray.400" />
+      {/* Upgrade confirmation modal */}
+      <Modal isOpen={isOpen} onClose={onClose} isCentered>
+        <ModalOverlay backdropFilter="blur(4px)" />
+        <ModalContent>
+          <ModalHeader>⬆️ Upgrade Ship</ModalHeader>
+          <ModalCloseButton />
           <ModalBody>
             {selectedShip && (
-              <VStack spacing={4}>
-                <Flex w="full" h="80px" justify="center" align="center" fontSize="4xl"
-                  borderRadius="xl" bgGradient={`linear(to-br, ${SHIP_TYPES[selectedShip.shipType]?.color}.900, gray.900)`}>
-                  {SHIP_TYPES[selectedShip.shipType]?.emoji}
-                  <Badge ml={2} colorScheme="yellow" fontSize="lg">Lv.{selectedShip.level}</Badge>
-                  <Text mx={2} color="gray.400">→</Text>
-                  <Badge colorScheme="green" fontSize="lg">Lv.{selectedShip.level + 1}</Badge>
-                </Flex>
-                <SimpleGrid columns={2} spacing={4} w="full">
-                  <Box p={3} bg="gray.900" borderRadius="lg" textAlign="center">
-                    <Text color="gray.500" fontSize="xs">Level curent</Text>
-                    <Text color="cyan.300" fontWeight="bold" fontSize="xl">{selectedShip.level}</Text>
-                  </Box>
-                  <Box p={3} bg="gray.900" borderRadius="lg" textAlign="center">
-                    <Text color="gray.500" fontSize="xs">Level nou</Text>
-                    <Text color="green.300" fontWeight="bold" fontSize="xl">{selectedShip.level + 1}</Text>
-                  </Box>
-                </SimpleGrid>
-                <Alert status="warning" borderRadius="lg" bg="orange.900" w="full">
-                  <AlertIcon />
-                  <Text fontSize="sm">Cost upgrade: <strong>{upgradePrice} EGLD</strong> (level × preț bază)</Text>
-                </Alert>
+              <VStack spacing={3} align="stretch">
+                <HStack justify="space-between">
+                  <Text color="gray.500">Ship</Text>
+                  <Text fontWeight="bold">{selectedShip.name || selectedShip.shipType}</Text>
+                </HStack>
+                <HStack justify="space-between">
+                  <Text color="gray.500">Current level</Text>
+                  <Text fontWeight="bold">{selectedShip.level ?? 1}</Text>
+                </HStack>
+                <HStack justify="space-between">
+                  <Text color="gray.500">New level</Text>
+                  <Badge colorScheme="blue">{(selectedShip.level ?? 1) + 1}</Badge>
+                </HStack>
+                <Divider />
+                <HStack justify="space-between">
+                  <Text fontWeight="bold">Cost</Text>
+                  <Text fontWeight="bold" color="blue.400">
+                    {(parseFloat(RARITY_PRICE[SHIP_TYPES.find(t => t.name === selectedShip.shipType)?.rarity ?? 'Common']) * (selectedShip.level ?? 1)).toFixed(3)} EGLD
+                  </Text>
+                </HStack>
               </VStack>
             )}
           </ModalBody>
           <ModalFooter gap={3}>
-            <Button variant="ghost" onClick={onUpgradeClose} color="gray.400">Anulează</Button>
-            <Button colorScheme="green" onClick={handleUpgrade} isLoading={txLoading}>
-              ⬆️ Upgrade
-            </Button>
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button colorScheme="blue" isLoading={upgrading} onClick={confirmUpgrade}>Upgrade</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
-    </Container>
+    </Box>
   );
 }
