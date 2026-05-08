@@ -8,7 +8,6 @@ const provider = new ProxyNetworkProvider(NETWORK_PROVIDER_URL);
 
 // ─── Encode helpers ───────────────────────────────────────────────────────────
 
-/** Returns decimal-string wei representation for sdk-dapp value field */
 function egldWei(amount: string): string {
   return String(BigInt(Math.round(parseFloat(amount) * 1e18)));
 }
@@ -31,7 +30,7 @@ async function sendTx(data: string, valueEgld = '0', gasLimit = 10_000_000) {
       successMessage: 'Transaction successful',
     },
   });
-  return sessionId;
+  return sessionId as string;
 }
 
 // ─── Write endpoints ──────────────────────────────────────────────────────────
@@ -46,7 +45,7 @@ export function joinGame(_address: string, gameId: number, bet: string) {
 
 export function placeShips(_address: string, gameId: number, shipPositions: number[][]) {
   const encoded = shipPositions
-    .map(pos => pos.map(hex2).join(''))
+    .map((pos) => pos.map(hex2).join(''))
     .join('@');
   return sendTx(`placeShips@${hex8(gameId)}@${encoded}`, '0', 15_000_000);
 }
@@ -57,6 +56,36 @@ export function attack(_address: string, gameId: number, row: number, col: numbe
 
 export function withdraw(_address: string, gameId: number) {
   return sendTx(`withdraw@${hex8(gameId)}`, '0', 8_000_000);
+}
+
+// ─── Poll attack result ───────────────────────────────────────────────────────
+/**
+ * Polls getGameState until the cell at [row, col] is no longer 'empty'
+ * (i.e., the tx was confirmed on-chain) or 10s timeout.
+ * Returns { result, gameOver, winner }.
+ */
+export async function pollAttackResult(
+  gameId: number,
+  row: number,
+  col: number,
+  _sessionId: string,
+  timeoutMs = 10_000
+): Promise<{ result: 'hit' | 'miss' | 'sunk'; gameOver: boolean; winner: string } | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1_200));
+    const state = await getGameState(gameId);
+    if (!state) continue;
+    const cell = state.board2[row]?.[col] ?? 0;
+    // 0 = empty, 1 = miss, 2 = hit, 3 = sunk
+    if (cell === 0) continue;
+    return {
+      result: cell === 3 ? 'sunk' : cell === 2 ? 'hit' : 'miss',
+      gameOver: state.status === 'finished',
+      winner: state.winner,
+    };
+  }
+  return null;
 }
 
 // ─── Read endpoints ───────────────────────────────────────────────────────────
@@ -125,5 +154,5 @@ export async function getTopPlayers(): Promise<any[]> {
 
 export const battleshipService = {
   createGame, joinGame, placeShips, attack, withdraw,
-  getGameState, getPlayerGames, getTopPlayers,
+  getGameState, getPlayerGames, getTopPlayers, pollAttackResult,
 };

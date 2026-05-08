@@ -1,40 +1,30 @@
-// MetaShipX — Runtime config
-// All values come from .env.local / .env.devnet
+// ─── Contract addresses ────────────────────────────────────────────────────
+export const BATTLESHIP_CONTRACT_ADDRESS: string =
+  process.env.REACT_APP_BATTLESHIP_ADDRESS ?? 'erd1qqqqqqqqqqqqqpgq_BATTLESHIP_PLACEHOLDER';
 
-export const ENV = import.meta.env.VITE_ENV || 'devnet';
+export const NFT_CONTRACT_ADDRESS: string =
+  process.env.REACT_APP_NFT_ADDRESS ?? 'erd1qqqqqqqqqqqqqpgq_NFT_PLACEHOLDER';
 
-export const CHAIN_ID = ENV === 'mainnet' ? '1' : ENV === 'testnet' ? 'T' : 'D';
+export const STAKING_CONTRACT_ADDRESS: string =
+  process.env.REACT_APP_STAKING_ADDRESS ?? 'erd1qqqqqqqqqqqqqpgq_STAKING_PLACEHOLDER';
 
-export const API_URL =
-  import.meta.env.VITE_API_URL ||
-  (ENV === 'mainnet'
-    ? 'https://api.multiversx.com'
-    : ENV === 'testnet'
-    ? 'https://testnet-api.multiversx.com'
-    : 'https://devnet-api.multiversx.com');
+export const MARKETPLACE_CONTRACT_ADDRESS: string =
+  process.env.REACT_APP_MARKETPLACE_ADDRESS ?? 'erd1qqqqqqqqqqqqqpgq_MARKETPLACE_PLACEHOLDER';
 
-export const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+// ─── Token identifiers ─────────────────────────────────────────────────────
+export const NFT_COLLECTION_ID: string =
+  process.env.REACT_APP_NFT_COLLECTION_ID ?? 'SHIP-000000';
 
-export const BATTLESHIP_CONTRACT =
-  import.meta.env.VITE_BATTLESHIP_CONTRACT || '';
+// ─── Network ────────────────────────────────────────────────────────────────
+export const NETWORK_PROVIDER_URL: string =
+  process.env.REACT_APP_NETWORK_URL ?? 'https://devnet-api.multiversx.com';
 
-export const NFT_CONTRACT =
-  import.meta.env.VITE_NFT_CONTRACT || '';
+export const CHAIN_ID: string =
+  process.env.REACT_APP_CHAIN_ID ?? 'D'; // D = devnet, 1 = mainnet
 
-export const STAKING_CONTRACT =
-  import.meta.env.VITE_STAKING_CONTRACT || '';
+// ─── Backend ────────────────────────────────────────────────────────────────
+export const BACKEND_URL: string =
+  process.env.REACT_APP_BACKEND_URL ?? 'http://localhost:3001';
 
-export const TOURNAMENT_CONTRACT =
-  import.meta.env.VITE_TOURNAMENT_CONTRACT || '';
-
-export const EXPLORER_URL =
-  ENV === 'mainnet'
-    ? 'https://explorer.multiversx.com'
-    : ENV === 'testnet'
-    ? 'https://testnet-explorer.multiversx.com'
-    : 'https://devnet-explorer.multiversx.com';
-
-/** Returns a full explorer link for a tx hash */
-export const txLink = (hash: string) => `${EXPLORER_URL}/transactions/${hash}`;
-/** Returns a full explorer link for a contract/wallet address */
-export const addrLink = (addr: string) => `${EXPLORER_URL}/accounts/${addr}`;
+export const WS_URL: string =
+  process.env.REACT_APP_WS_URL ?? 'ws://localhost:3001/ws';
