@@ -1,41 +1,29 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { EnvironmentsEnum } from '@multiversx/sdk-dapp/out/types/enums.types';
-import { useGetAccountInfo } from '@multiversx/sdk-dapp/out/react/account/useGetAccountInfo';
-import { useGetLoginInfo } from '@multiversx/sdk-dapp/out/react/loginInfo/useGetLoginInfo';
-import { environment } from '../config';
+/**
+ * Thin context re-exporting sdk-dapp account info.
+ * No WalletConnect — auth is handled via UnlockPage
+ * using xPortal App QR, Web Wallet, or DeFi Wallet extension.
+ */
+import React, { createContext, useContext } from 'react';
+import { useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
+import { useGetLoginInfo }   from '@multiversx/sdk-dapp/hooks';
 
-type DappContextType = {
+type DappCtx = {
   isLoggedIn: boolean;
   address: string;
-  isInitialized: boolean;
-  environment: EnvironmentsEnum;
 };
 
-const DappContext = createContext<DappContextType | undefined>(undefined);
+const DappContext = createContext<DappCtx>({ isLoggedIn: false, address: '' });
 
 export const DappProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isInitialized, setIsInitialized] = useState(false);
-  const { address } = useGetAccountInfo();
+  const { address }    = useGetAccountInfo();
   const { isLoggedIn } = useGetLoginInfo();
 
-  useEffect(() => { setIsInitialized(true); }, []);
-
-  const env =
-    environment.id === 'mainnet' ? EnvironmentsEnum.mainnet
-    : environment.id === 'testnet' ? EnvironmentsEnum.testnet
-    : EnvironmentsEnum.devnet;
-
   return (
-    <DappContext.Provider value={{ isLoggedIn, address: address ?? '', isInitialized, environment: env }}>
+    <DappContext.Provider value={{ isLoggedIn, address: address ?? '' }}>
       {children}
     </DappContext.Provider>
   );
 };
 
-export const useDapp = (): DappContextType => {
-  const ctx = useContext(DappContext);
-  if (!ctx) throw new Error('useDapp must be used within a DappProvider');
-  return ctx;
-};
-
+export const useDapp = (): DappCtx => useContext(DappContext);
 export default DappProvider;

@@ -7,7 +7,7 @@ export const NETWORK_CONFIG = {
 
 export const environment = {
   id: (import.meta.env.VITE_NETWORK ?? 'devnet') as 'devnet' | 'testnet' | 'mainnet',
-  walletConnectV2ProjectId: import.meta.env.VITE_WALLET_CONNECT_V2_PROJECT_ID ?? '',
+  // walletConnectV2ProjectId removed — not used
 };
 
 export const BATTLESHIP_CONTRACT_ADDRESS =
@@ -28,7 +28,7 @@ export const TOURNAMENT_CONTRACT_ADDRESS =
 
 export const MINT_PRICE_EGLD = '0.05';
 
-// ─── Chain-specific overrides ─────────────────────────────────────────────────
+// Network overrides
 const CHAIN_CONFIGS: Record<string, Partial<typeof NETWORK_CONFIG>> = {
   testnet: {
     chainId: 'T',

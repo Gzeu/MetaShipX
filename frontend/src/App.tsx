@@ -1,7 +1,5 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { ChakraProvider, Box } from '@chakra-ui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { DappProvider } from './contexts/DappProvider';
+import { Routes, Route } from 'react-router-dom';
+import { ChakraProvider, Box, ColorModeScript } from '@chakra-ui/react';
 import { theme } from './styles/theme';
 import Layout from './components/Layout';
 
@@ -11,56 +9,45 @@ import MarketplacePage from './pages/Marketplace';
 import ProfilePage     from './pages/Profile';
 import LeaderboardPage from './pages/Leaderboard';
 import NotFoundPage    from './pages/NotFound';
-
-// New pages
 import LobbyPage       from './pages/LobbyPage/LobbyPage';
 import { GamePage }    from './pages/GamePage/GamePage';
 import TournamentPage  from './pages/TournamentPage/TournamentPage';
 import StakingPage     from './pages/StakingPage/StakingPage';
-
-// Tournament list (index page)
 import TournamentsPage from './pages/Tournaments';
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: { refetchOnWindowFocus: false, retry: 1 },
-  },
-});
+import UnlockPage      from './pages/UnlockPage/UnlockPage';
 
 function App() {
   return (
     <ChakraProvider theme={theme}>
-      <QueryClientProvider client={queryClient}>
-        <DappProvider>
-          <Router>
-            <Box minH="100vh" bg="gray.50">
-              <Layout>
-                <Routes>
-                  {/* Core */}
-                  <Route path="/"                  element={<HomePage />} />
-                  <Route path="/lobby"             element={<LobbyPage />} />
-                  <Route path="/game/:gameId"      element={<GamePage />} />
+      <ColorModeScript initialColorMode={theme.config?.initialColorMode ?? 'dark'} />
+      <Box minH="100vh" bg="gray.900">
+        <Layout>
+          <Routes>
+            {/* Public */}
+            <Route path="/"              element={<HomePage />} />
+            <Route path="/unlock"        element={<UnlockPage />} />
+            <Route path="/leaderboard"   element={<LeaderboardPage />} />
 
-                  {/* Tournaments */}
-                  <Route path="/tournaments"       element={<TournamentsPage />} />
-                  <Route path="/tournaments/:id"   element={<TournamentPage />} />
+            {/* Game */}
+            <Route path="/lobby"         element={<LobbyPage />} />
+            <Route path="/game/:gameId"  element={<GamePage />} />
 
-                  {/* Staking */}
-                  <Route path="/staking"           element={<StakingPage />} />
+            {/* Tournaments */}
+            <Route path="/tournaments"     element={<TournamentsPage />} />
+            <Route path="/tournaments/:id" element={<TournamentPage />} />
 
-                  {/* Other */}
-                  <Route path="/marketplace"       element={<MarketplacePage />} />
-                  <Route path="/profile"           element={<ProfilePage />} />
-                  <Route path="/leaderboard"       element={<LeaderboardPage />} />
+            {/* Staking & NFT */}
+            <Route path="/staking"       element={<StakingPage />} />
+            <Route path="/marketplace"   element={<MarketplacePage />} />
 
-                  {/* 404 */}
-                  <Route path="*"                  element={<NotFoundPage />} />
-                </Routes>
-              </Layout>
-            </Box>
-          </Router>
-        </DappProvider>
-      </QueryClientProvider>
+            {/* Profile */}
+            <Route path="/profile"       element={<ProfilePage />} />
+
+            {/* 404 */}
+            <Route path="*"             element={<NotFoundPage />} />
+          </Routes>
+        </Layout>
+      </Box>
     </ChakraProvider>
   );
 }
