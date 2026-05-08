@@ -1,0 +1,35 @@
+{
+  "name": "create game with bet",
+  "steps": [
+    {
+      "step": "setState",
+      "accounts": {
+        "address:player1": {
+          "nonce": "0",
+          "balance": "1000000000000000000"
+        },
+        "sc:battleship": {
+          "nonce": "0",
+          "balance": "0",
+          "code": "file:contracts/battleship/output/battleship.wasm"
+        }
+      }
+    },
+    {
+      "step": "scCall",
+      "txId": "create-game",
+      "tx": {
+        "from": "address:player1",
+        "to": "sc:battleship",
+        "egldValue": "100000000000000000",
+        "function": "createGame",
+        "arguments": [],
+        "gasLimit": "10000000"
+      },
+      "expect": {
+        "status": "0",
+        "message": ""
+      }
+    }
+  ]
+}

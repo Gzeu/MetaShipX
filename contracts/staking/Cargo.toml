@@ -1,5 +1,5 @@
 [package]
-name = "battleship-staking"
+name = "staking"
 version = "0.1.0"
 edition = "2021"
 

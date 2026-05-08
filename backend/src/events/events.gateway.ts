@@ -1,9 +1,9 @@
 import {
   WebSocketGateway,
   WebSocketServer,
-  SubscribeMessage,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  SubscribeMessage,
   MessageBody,
   ConnectedSocket,
 } from '@nestjs/websockets';
@@ -11,63 +11,48 @@ import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
 
 @WebSocketGateway({
-  cors: { origin: '*' },
-  namespace: '/',
+  cors: { origin: process.env.FRONTEND_URL || '*', credentials: true },
+  namespace: '/ws',
 })
 export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  @WebSocketServer() server: Server;
+  @WebSocketServer()
+  private server: Server;
+
   private readonly logger = new Logger(EventsGateway.name);
 
-  handleConnection(client: Socket) {
+  handleConnection(client: Socket): void {
     this.logger.log(`Client connected: ${client.id}`);
   }
 
-  handleDisconnect(client: Socket) {
+  handleDisconnect(client: Socket): void {
     this.logger.log(`Client disconnected: ${client.id}`);
   }
 
-  // ── Client joins a game room ──────────────────────────────────────────────
-  @SubscribeMessage('join:game')
+  // Client joins a game room to receive targeted events
+  @SubscribeMessage('joinGame')
   handleJoinGame(
     @MessageBody() gameId: string,
     @ConnectedSocket() client: Socket,
-  ) {
+  ): void {
     client.join(`game:${gameId}`);
-    this.logger.log(`${client.id} joined game:${gameId}`);
-    return { ok: true };
+    this.logger.log(`Client ${client.id} joined room game:${gameId}`);
   }
 
-  // ── Client joins as spectator ─────────────────────────────────────────────
-  @SubscribeMessage('join:spectate')
-  handleJoinSpectate(
+  @SubscribeMessage('leaveGame')
+  handleLeaveGame(
     @MessageBody() gameId: string,
     @ConnectedSocket() client: Socket,
-  ) {
-    client.join(`spectate:${gameId}`);
-    this.logger.log(`${client.id} spectating game:${gameId}`);
-    // Acknowledge with spectator count
-    const room = this.server.sockets.adapter.rooms.get(`spectate:${gameId}`);
-    this.broadcastToGame(gameId, 'game:spectator_count', { count: room?.size ?? 1 });
-    return { ok: true };
+  ): void {
+    client.leave(`game:${gameId}`);
   }
 
-  // ── Client joins lobby ────────────────────────────────────────────────────
-  @SubscribeMessage('join:lobby')
-  handleJoinLobby(@ConnectedSocket() client: Socket) {
-    client.join('lobby');
-    return { ok: true };
+  // ── Broadcast helpers ──────────────────────────────────────────────────────
+
+  broadcast(event: string, data: unknown): void {
+    this.server.emit(event, data);
   }
 
-  // ── Server → rooms ────────────────────────────────────────────────────────
-  broadcastToGame(gameId: string, event: string, data: unknown) {
+  broadcastToGame(gameId: number | string, event: string, data: unknown): void {
     this.server.to(`game:${gameId}`).emit(event, data);
-  }
-
-  broadcastToSpectators(gameId: string, event: string, data: unknown) {
-    this.server.to(`spectate:${gameId}`).emit(event, data);
-  }
-
-  broadcastToLobby(event: string, data: unknown) {
-    this.server.to('lobby').emit(event, data);
   }
 }

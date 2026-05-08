@@ -1,145 +1,133 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { createHmac, timingSafeEqual } from 'crypto';
+import { ConfigService } from '@nestjs/config';
+import { GameEvent, GameEventType } from './game-event.entity';
 import { EventsGateway } from '../events/events.gateway';
-import { GameEvent } from './game-event.entity';
 
-// ─── MultiversX transaction webhook payload ───────────────────────────────────
-export interface MxTxWebhookPayload {
-  txHash: string;
-  status: 'success' | 'fail' | 'pending';
-  receiver: string;         // smart contract address
+interface MxNotifierTx {
+  hash: string;
+  receiver: string;
   sender: string;
-  data: string;             // base64 encoded calldata
-  timestamp: number;
-  events?: MxLogEvent[];
-}
-
-export interface MxLogEvent {
-  identifier: string;       // e.g. "attackFired", "gameCreated"
-  topics: string[];         // base64 encoded topics
-  data?: string;
+  function?: string;
+  events?: Array<{ identifier: string; topics: string[]; data?: string }>;
 }
 
 @Injectable()
 export class WebhookService {
   private readonly logger = new Logger(WebhookService.name);
+  private readonly secret: string;
 
   constructor(
-    private readonly eventsGateway: EventsGateway,
     @InjectRepository(GameEvent)
-    private readonly gameEventRepo: Repository<GameEvent>,
-  ) {}
+    private readonly repo: Repository<GameEvent>,
+    private readonly gateway: EventsGateway,
+    private readonly cfg: ConfigService,
+  ) {
+    this.secret = cfg.getOrThrow<string>('WEBHOOK_SECRET');
+  }
 
-  async handleTransaction(payload: MxTxWebhookPayload): Promise<void> {
-    if (payload.status !== 'success') return;
-
-    const events = payload.events ?? [];
-
-    for (const event of events) {
-      await this.processEvent(event, payload);
+  // ── HMAC-SHA256 signature verification ──────────────────────────────────────
+  verifySignature(rawBody: Buffer, signature: string): void {
+    const expected = createHmac('sha256', this.secret)
+      .update(rawBody)
+      .digest('hex');
+    const expectedBuf = Buffer.from(expected, 'hex');
+    const actualBuf = Buffer.from(signature.replace(/^sha256=/, ''), 'hex');
+    if (
+      expectedBuf.length !== actualBuf.length ||
+      !timingSafeEqual(expectedBuf, actualBuf)
+    ) {
+      throw new UnauthorizedException('Invalid webhook signature');
     }
   }
 
-  private async processEvent(
-    event: MxLogEvent,
-    tx: MxTxWebhookPayload,
-  ): Promise<void> {
-    this.logger.log(`Processing event: ${event.identifier} | tx: ${tx.txHash}`);
-
-    // Decode base64 topics
-    const topics = event.topics.map(t => Buffer.from(t, 'base64').toString());
-
-    switch (event.identifier) {
-      case 'gameCreated': {
-        const [gameId, player1, betHex] = topics;
-        const payload = { gameId, player1, bet: parseInt(betHex, 16) / 1e18, txHash: tx.txHash };
-        await this.persist('gameCreated', gameId, payload, tx.txHash);
-        this.eventsGateway.broadcastToLobby('game:created', payload);
-        break;
+  // ── Main handler ─────────────────────────────────────────────────────────────
+  async handleTransactions(txs: MxNotifierTx[]): Promise<void> {
+    for (const tx of txs) {
+      try {
+        await this.processTx(tx);
+      } catch (err) {
+        this.logger.error(`Error processing tx ${tx.hash}: ${err}`);
       }
-
-      case 'playerJoined': {
-        const [gameId, player2] = topics;
-        const payload = { gameId, player2, txHash: tx.txHash };
-        await this.persist('playerJoined', gameId, payload, tx.txHash);
-        this.eventsGateway.broadcastToGame(gameId, 'game:player_joined', payload);
-        this.eventsGateway.broadcastToSpectators(gameId, 'spectator:player_joined', payload);
-        break;
-      }
-
-      case 'shipsPlaced': {
-        const [gameId, player] = topics;
-        const payload = { gameId, player, txHash: tx.txHash };
-        await this.persist('shipsPlaced', gameId, payload, tx.txHash);
-        this.eventsGateway.broadcastToGame(gameId, 'game:ships_placed', payload);
-        break;
-      }
-
-      case 'attackFired': {
-        const [gameId, attacker, rowHex, colHex, resultHex] = topics;
-        const row    = parseInt(rowHex, 16);
-        const col    = parseInt(colHex, 16);
-        const result = this.decodeAttackResult(parseInt(resultHex, 16));
-        const payload = { gameId, attacker, row, col, result, txHash: tx.txHash };
-        await this.persist('attackFired', gameId, payload, tx.txHash);
-        // Broadcast to players (with sensitive result)
-        this.eventsGateway.broadcastToGame(gameId, 'game:attack', payload);
-        // Broadcast to spectators (same data — spectators see everything)
-        this.eventsGateway.broadcastToSpectators(gameId, 'spectator:attack', payload);
-        break;
-      }
-
-      case 'shipSunk': {
-        const [gameId, victim, shipTypeHex] = topics;
-        const shipType = this.decodeShipType(parseInt(shipTypeHex, 16));
-        const payload = { gameId, victim, shipType, txHash: tx.txHash };
-        await this.persist('shipSunk', gameId, payload, tx.txHash);
-        this.eventsGateway.broadcastToGame(gameId, 'game:ship_sunk', payload);
-        this.eventsGateway.broadcastToSpectators(gameId, 'spectator:ship_sunk', payload);
-        break;
-      }
-
-      case 'gameEnded': {
-        const [gameId, winner, rewardHex] = topics;
-        const reward = parseInt(rewardHex, 16) / 1e18;
-        const payload = { gameId, winner, reward, txHash: tx.txHash };
-        await this.persist('gameEnded', gameId, payload, tx.txHash);
-        this.eventsGateway.broadcastToGame(gameId, 'game:ended', payload);
-        this.eventsGateway.broadcastToSpectators(gameId, 'spectator:game_ended', payload);
-        this.eventsGateway.broadcastToLobby('game:ended', { gameId, winner });
-        break;
-      }
-
-      default:
-        this.logger.debug(`Unhandled event: ${event.identifier}`);
     }
   }
 
-  private async persist(
-    type: string,
-    gameId: string,
-    data: object,
-    txHash: string,
-  ): Promise<void> {
-    try {
-      await this.gameEventRepo.save(
-        this.gameEventRepo.create({ type, gameId, data, txHash }),
-      );
-    } catch (err) {
-      this.logger.error(`Failed to persist event ${type}`, err);
-    }
+  private async processTx(tx: MxNotifierTx): Promise<void> {
+    const eventType = this.resolveEventType(tx);
+    const { gameId, row, col, result } = this.extractContext(tx);
+
+    const entity = this.repo.create({
+      txHash: tx.hash,
+      contractAddress: tx.receiver,
+      callerAddress: tx.sender,
+      eventType,
+      gameId,
+      row,
+      col,
+      result,
+      payload: { function: tx.function, events: tx.events } as any,
+    });
+
+    await this.repo.save(entity);
+
+    // Broadcast via WebSocket to all connected clients
+    this.gateway.broadcast(eventType, {
+      txHash: tx.hash,
+      gameId,
+      row,
+      col,
+      result,
+      caller: tx.sender,
+    });
+
+    this.logger.log(`[${eventType}] tx=${tx.hash} gameId=${gameId ?? '-'}`);
   }
 
-  private decodeAttackResult(code: number): string {
-    const map: Record<number, string> = { 0: 'miss', 1: 'hit', 2: 'sunk', 3: 'win' };
-    return map[code] ?? 'unknown';
-  }
-
-  private decodeShipType(code: number): string {
-    const map: Record<number, string> = {
-      0: 'Destroyer', 1: 'Submarine', 2: 'Cruiser', 3: 'Battleship', 4: 'Carrier',
+  private resolveEventType(tx: MxNotifierTx): GameEventType {
+    const fn = tx.function ?? '';
+    const map: Record<string, GameEventType> = {
+      createGame:     'gameCreated',
+      joinGame:       'gameJoined',
+      placeShips:     'shipsPlaced',
+      attack:         'attacked',
+      withdraw:       'withdrawn',
+      mintShip:       'shipMinted',
+      upgradeShip:    'shipUpgraded',
+      stake:          'staked',
+      unstake:        'unstaked',
+      claimRewards:   'rewardsClaimed',
     };
-    return map[code] ?? 'Unknown';
+    return map[fn] ?? 'unknown';
+  }
+
+  private extractContext(tx: MxNotifierTx): {
+    gameId?: number;
+    row?: number;
+    col?: number;
+    result?: string;
+  } {
+    // Topics are base64-encoded. Parse known events from mx-notifier payload.
+    const attackEvent = tx.events?.find(e => e.identifier === 'attackResult');
+    if (attackEvent?.topics?.length >= 4) {
+      const [gameIdB64, rowB64, colB64, resultB64] = attackEvent.topics;
+      return {
+        gameId: parseInt(Buffer.from(gameIdB64, 'base64').toString('hex'), 16),
+        row:    parseInt(Buffer.from(rowB64,    'base64').toString('hex'), 16),
+        col:    parseInt(Buffer.from(colB64,    'base64').toString('hex'), 16),
+        result: Buffer.from(resultB64, 'base64').toString('utf8'),
+      };
+    }
+    const gameEvent = tx.events?.find(e =>
+      ['gameCreated','gameJoined','shipsPlaced','gameWon'].includes(e.identifier)
+    );
+    if (gameEvent?.topics?.[0]) {
+      const gameId = parseInt(
+        Buffer.from(gameEvent.topics[0], 'base64').toString('hex'), 16
+      );
+      return { gameId };
+    }
+    return {};
   }
 }

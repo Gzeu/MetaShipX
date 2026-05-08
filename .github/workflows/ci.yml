@@ -7,6 +7,7 @@ on:
     branches: [main]
 
 jobs:
+  # ── Frontend ──────────────────────────────────────────────────────────────
   frontend:
     name: Frontend — typecheck + build
     runs-on: ubuntu-latest
@@ -39,7 +40,9 @@ jobs:
           VITE_NFT_CONTRACT: erd1qqqqqqqqqqqqqpgqe9rvv2n378e27esnhcpgn6l76pv3nf8nvs9sn4600g
           VITE_STAKING_CONTRACT: erd1qqqqqqqqqqqqqpgqf9rvv2n378e27esnhcpgn6l76pv3nf8nvs9sn4600g
           VITE_API_URL: http://localhost:4000
+          VITE_WS_URL: ws://localhost:4000/ws
 
+  # ── Backend ───────────────────────────────────────────────────────────────
   backend:
     name: Backend — typecheck + build
     runs-on: ubuntu-latest
@@ -59,7 +62,42 @@ jobs:
         run: npm ci
 
       - name: TypeScript check
-        run: npm run typecheck
+        run: npx tsc --noEmit
 
       - name: Build
         run: npm run build
+
+  # ── Rust Contracts ────────────────────────────────────────────────────────
+  contracts:
+    name: Contracts — Rust check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts/battleship/target
+            contracts/nft/target
+            contracts/staking/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('contracts/**/Cargo.lock') }}
+
+      - name: Check battleship
+        run: cargo check --manifest-path contracts/battleship/Cargo.toml
+
+      - name: Check nft
+        run: cargo check --manifest-path contracts/nft/Cargo.toml
+
+      - name: Check staking
+        run: cargo check --manifest-path contracts/staking/Cargo.toml
+
+      - name: Test battleship
+        run: cargo test --manifest-path contracts/battleship/Cargo.toml
