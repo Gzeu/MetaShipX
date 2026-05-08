@@ -1,177 +1,168 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
 import { useGame } from '../../hooks/useGame';
-import { useGamePolling } from '../../hooks/useGamePolling';
-import { useSound } from '../../hooks/useSound';
+import { useGameWs } from '../../hooks/useGameWs';
 import { GameBoard } from '../../components/GameBoard/GameBoard';
-import { fmtEgld, fmtAddress } from '../../utils/format';
-import { STATUS_LABELS, SHIP_TYPES, SHIP_SIZES } from '../../utils/constants';
-import type { ShipType } from '../../types';
+import { PlacementGrid } from '../../components/PlacementGrid/PlacementGrid';
 import './GamePage.css';
 
-type Phase = 'placement' | 'battle' | 'finished';
+const SHIPS: { type: string; size: number }[] = [
+  { type: 'Carrier',    size: 5 },
+  { type: 'Battleship', size: 4 },
+  { type: 'Cruiser',    size: 3 },
+  { type: 'Submarine',  size: 3 },
+  { type: 'Destroyer',  size: 2 },
+];
 
-export default function GamePage(): React.ReactElement {
+function fmtEgld(wei: string) {
+  try { return (Number(BigInt(wei)) / 1e18).toFixed(4) + ' EGLD'; } catch { return wei; }
+}
+function fmtAddr(a: string) { return a ? a.slice(0, 6) + '…' + a.slice(-4) : ''; }
+
+export function GamePage(): React.ReactElement {
   const { gameId } = useParams<{ gameId: string }>();
   const navigate = useNavigate();
   const { account } = useGetAccountInfo();
-  const myAddress = account.address;
+  const myAddress = account?.address ?? '';
+  const numGameId = parseInt(gameId ?? '0', 10);
 
-  const { gameState, loading, error, placedShips, isMyTurn,
-          placeShip, submitPlacement, attack, setGameState } = useGame();
-  const { play } = useSound();
+  const game = useGame(myAddress);
 
-  const [phase, setPhase] = useState<Phase>('placement');
-  const [selectedShip, setSelectedShip] = useState<ShipType>('Destroyer');
-  const [horizontal, setHorizontal] = useState(true);
-  const [statusMsg, setStatusMsg] = useState('');
-
-  // Poll game state every 5s during battle
-  useGamePolling({
-    gameId: gameId ?? '',
-    address: myAddress,
-    enabled: phase === 'battle',
-    onUpdate: (state) => {
-      setGameState(state);
-      if (state.winner) {
-        setPhase('finished');
-        if (state.winner === myAddress) play('victory');
-        else play('defeat');
-      }
-    },
+  // ── WebSocket: receive enemy attacks live ─────────────────────────────────
+  useGameWs({
+    gameId: numGameId,
+    myAddress,
+    onAttack: (row, col, result) => game.receiveEnemyAttack(row, col, result),
   });
 
   useEffect(() => {
-    if (!gameId) { navigate('/'); return; }
-  }, [gameId, navigate]);
+    if (!gameId || isNaN(numGameId)) navigate('/');
+  }, [gameId, navigate, numGameId]);
 
-  // Determine phase from on-chain status
-  useEffect(() => {
-    if (!gameState) return;
-    if (gameState.status === 2 || gameState.status === 3) setPhase('finished');
-    else if (gameState.status === 1) setPhase('battle');
-  }, [gameState]);
+  // Placement: collect [row, col] pairs from PlacementGrid
+  const handlePlacementConfirm = useCallback(
+    async (positions: number[][]) => {
+      await game.placeShips(positions);
+    },
+    [game]
+  );
 
-  const handleCellClick = async (row: number, col: number) => {
-    if (phase === 'placement') {
-      const ok = placeShip(selectedShip, row, col, horizontal);
-      if (!ok) { setStatusMsg('Invalid placement'); return; }
-      setStatusMsg(`${selectedShip} placed`);
-      play('click');
-    } else if (phase === 'battle' && isMyTurn) {
-      if (gameState?.opponentBoard[row][col] !== 'empty') return;
-      await attack(row, col);
-      play('cannon');
-    }
-  };
+  // Battle: attack on enemy board click
+  const handleEnemyCellClick = useCallback(
+    async (row: number, col: number) => {
+      if (!game.isMyTurn || game.status !== 'active') return;
+      await game.handleAttack(row, col);
+    },
+    [game]
+  );
 
-  const handleSubmitPlacement = async () => {
-    const needed = SHIP_TYPES.reduce((acc, t) => acc + SHIP_SIZES[t], 0);
-    const placed = placedShips.reduce((acc, s) => acc + s.size, 0);
-    if (placed < needed) { setStatusMsg(`Place all ships first (${placed}/${needed} cells)`); return; }
-    await submitPlacement();
-    play('confirm');
-    setPhase('battle');
-  };
-
-  const shipsLeft = SHIP_TYPES.filter(t => !placedShips.some(s => s.type === t));
+  // ── Render helpers ────────────────────────────────────────────────────────
+  const iWon = game.winner === myAddress;
 
   return (
-    <div className="game-page">
-      <header className="game-header">
-        <button className="btn-back" onClick={() => navigate('/')}>← Lobby</button>
-        <h1>Game #{gameId?.slice(0, 8)}</h1>
-        {gameState && (
-          <span className={`status-badge status-${gameState.status}`}>
-            {STATUS_LABELS[gameState.status]}
-          </span>
-        )}
+    <main className="gp-root">
+      {/* ── Header ── */}
+      <header className="gp-header">
+        <button className="gp-back" onClick={() => navigate('/lobby')}>← Lobby</button>
+        <h1 className="gp-title">Game #{gameId}</h1>
+        <span className={`gp-status gp-status--${game.status}`}>{game.status.toUpperCase()}</span>
       </header>
 
-      {error && <div className="game-error">{error}</div>}
-      {loading && <div className="game-loading">Loading…</div>}
+      {game.error && <div className="gp-error">{game.error}</div>}
 
-      {phase === 'placement' && (
-        <section className="placement-section">
-          <div className="ship-selector">
-            <h3>Select Ship</h3>
-            {shipsLeft.map(t => (
-              <button
-                key={t}
-                className={`ship-btn ${selectedShip === t ? 'active' : ''}`}
-                onClick={() => setSelectedShip(t)}
-              >
-                {t} ({SHIP_SIZES[t]})
-              </button>
-            ))}
-            {shipsLeft.length === 0 && <p className="all-placed">✓ All ships placed</p>}
-          </div>
-
-          <div className="orientation-toggle">
-            <button className={horizontal ? 'active' : ''} onClick={() => setHorizontal(true)}>Horizontal</button>
-            <button className={!horizontal ? 'active' : ''} onClick={() => setHorizontal(false)}>Vertical</button>
-          </div>
-
-          <GameBoard
-            grid={gameState?.myBoard ?? Array.from({ length: 10 }, () => Array(10).fill('empty'))}
-            onCellClick={handleCellClick}
-            placedShips={placedShips}
-            interactive
-            label="Your Fleet"
-          />
-
-          <button className="btn-primary submit-btn" onClick={handleSubmitPlacement}>
-            Confirm Placement
-          </button>
-          {statusMsg && <p className="status-msg">{statusMsg}</p>}
+      {/* ── PHASE: WAITING ── */}
+      {(game.status === 'idle' || game.status === 'waiting') && (
+        <section className="gp-waiting">
+          <div className="gp-waiting-icon">⏳</div>
+          <h2>Waiting for opponent…</h2>
+          <p>Share this link:</p>
+          <code className="gp-share-link">{window.location.href}</code>
+          {game.loading && <div className="gp-spinner" />}
         </section>
       )}
 
-      {phase === 'battle' && gameState && (
-        <section className="battle-section">
-          <div className="boards-row">
-            <div className="board-col">
+      {/* ── PHASE: PLACEMENT ── */}
+      {game.status === 'placing' && (
+        <section className="gp-placement">
+          <h2>Place Your Fleet</h2>
+          <p className="gp-hint">Click a cell to place ship, click again to rotate. Confirm when ready.</p>
+          <PlacementGrid ships={SHIPS} onConfirm={handlePlacementConfirm} loading={game.loading} />
+        </section>
+      )}
+
+      {/* ── PHASE: BATTLE ── */}
+      {game.status === 'active' && (
+        <section className="gp-battle">
+          <div className="gp-turn-banner">
+            {game.isMyTurn
+              ? <span className="gp-my-turn">🎯 Your turn — select a target</span>
+              : <span className="gp-enemy-turn">⏳ Opponent is thinking…</span>}
+          </div>
+
+          <div className="gp-boards">
+            {/* My board (defensive) */}
+            <div className="gp-board-wrap">
+              <h3>Your Fleet</h3>
               <GameBoard
-                grid={gameState.myBoard}
-                placedShips={gameState.myShips}
+                cells={game.myBoard}
+                onCellClick={() => {}}
+                interactive={false}
+                lastAttack={game.lastAttack?.isMyAttack === false ? game.lastAttack : null}
                 label="Your Board"
+                myAddress={myAddress}
               />
             </div>
-            <div className="turn-indicator">
-              {isMyTurn ? '🎯 Your Turn' : `⏳ ${fmtAddress(gameState.currentTurn)}'s turn`}
+
+            {/* Divider */}
+            <div className="gp-vs">
+              <span>VS</span>
+              {game.bet !== '0' && (
+                <div className="gp-wager">
+                  <span>🏆</span>
+                  <strong>{fmtEgld(game.bet)}</strong>
+                </div>
+              )}
             </div>
-            <div className="board-col">
+
+            {/* Enemy board (offensive) */}
+            <div className="gp-board-wrap">
+              <h3>Enemy Fleet</h3>
               <GameBoard
-                grid={gameState.opponentBoard}
-                onCellClick={handleCellClick}
-                interactive={isMyTurn}
-                label={`Opponent: ${fmtAddress(gameState.player2 === myAddress ? gameState.player1 : gameState.player2)}`}
+                cells={game.enemyBoard}
+                onCellClick={handleEnemyCellClick}
+                interactive={game.isMyTurn}
+                lastAttack={game.lastAttack?.isMyAttack === true ? game.lastAttack : null}
+                label="Enemy Board"
+                myAddress={myAddress}
               />
             </div>
           </div>
-          <div className="wager-row">
-            <span>Wager: <strong>{fmtEgld(gameState.wager)}</strong></span>
-          </div>
+
+          {game.loading && <div className="gp-tx-pending">📡 Transaction pending…</div>}
         </section>
       )}
 
-      {phase === 'finished' && gameState && (
-        <section className="finished-section">
-          {gameState.winner === myAddress ? (
+      {/* ── PHASE: FINISHED ── */}
+      {game.status === 'finished' && (
+        <section className="gp-finished">
+          {iWon ? (
             <>
-              <div className="result-win">🏆 Victory!</div>
-              <p>You won {fmtEgld(gameState.wager)} EGLD</p>
+              <div className="gp-result gp-result--win">🏆 Victory!</div>
+              <p>You won {fmtEgld(game.bet)}!</p>
             </>
           ) : (
             <>
-              <div className="result-loss">💀 Defeat</div>
-              <p>Better luck next time</p>
+              <div className="gp-result gp-result--loss">💥 Defeat</div>
+              <p>Better luck next time.</p>
             </>
           )}
-          <button className="btn-primary" onClick={() => navigate('/')}>Back to Lobby</button>
+          <div className="gp-finished-actions">
+            <button className="gp-btn-primary" onClick={() => navigate('/lobby')}>Back to Lobby</button>
+            <button className="gp-btn-secondary" onClick={() => navigate(`/spectate/${gameId}`)}>Watch Replay</button>
+          </div>
         </section>
       )}
-    </div>
+    </main>
   );
 }

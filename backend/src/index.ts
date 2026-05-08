@@ -2,33 +2,32 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { createServer } from 'http';
-import { config } from './config';
-import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import { setupWebSocket } from './routes/websocket';
 import healthRouter from './routes/health';
 import leaderboardRouter from './routes/leaderboard';
-import tournamentsRouter from './routes/tournaments';
 import statsRouter from './routes/stats';
-import { setupWebSocket } from './routes/websocket';
+import tournamentsRouter from './routes/tournaments';
+import webhookRouter from './routes/webhook';
+import { config } from './config';
 
 const app = express();
 
 app.use(helmet());
 app.use(cors({ origin: config.corsOrigin, credentials: true }));
-app.use(express.json({ limit: '256kb' }));
+app.use(express.json());
 
-app.use('/api/health', healthRouter);
-app.use('/api/leaderboard', leaderboardRouter);
-app.use('/api/tournaments', tournamentsRouter);
-app.use('/api/stats', statsRouter);
-
-app.use(notFoundHandler);
-app.use(errorHandler);
+// Routes
+app.use('/health', healthRouter);
+app.use('/leaderboard', leaderboardRouter);
+app.use('/stats', statsRouter);
+app.use('/tournaments', tournamentsRouter);
+app.use('/webhook', webhookRouter);
 
 const server = createServer(app);
 setupWebSocket(server);
 
 server.listen(config.port, () => {
-  console.log(`[server] MetaShipX backend running on port ${config.port} (${config.nodeEnv})`);
+  console.log(`[server] MetaShipX backend running on port ${config.port}`);
 });
 
 export default app;
