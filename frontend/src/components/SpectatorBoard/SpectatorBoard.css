@@ -1,0 +1,47 @@
+.spectator-board {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.spectator-board__label {
+  font-weight: 700;
+  font-size: 0.875rem;
+  letter-spacing: 0.06em;
+  color: rgba(255,255,255,0.6);
+  text-transform: uppercase;
+}
+
+.spectator-board__grid {
+  display: grid;
+  grid-template-columns: 24px repeat(10, 1fr);
+  gap: 3px;
+}
+
+.spectator-board__corner,
+.spectator-board__header,
+.spectator-board__row-num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  color: rgba(255,255,255,0.35);
+  font-weight: 600;
+}
+
+.spectator-board__cell {
+  aspect-ratio: 1;
+  border-radius: 5px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.07);
+  transition: background 200ms ease;
+}
+
+.spectator-board__cell--hit  { background: rgba(255, 80, 80, 0.65);  border-color: rgba(255,80,80,0.5); box-shadow: 0 0 6px rgba(255,80,80,0.4); }
+.spectator-board__cell--miss { background: rgba(60, 160, 255, 0.45); border-color: rgba(60,160,255,0.4); }
+.spectator-board__cell--sunk { background: rgba(255, 165, 0, 0.65);  border-color: rgba(255,165,0,0.5); box-shadow: 0 0 8px rgba(255,165,0,0.5); animation: sunkPulse 1.6s ease-in-out infinite; }
+
+@keyframes sunkPulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(255,165,0,0.4); }
+  50%       { box-shadow: 0 0 14px rgba(255,165,0,0.7); }
+}

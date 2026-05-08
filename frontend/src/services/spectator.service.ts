@@ -1,6 +1,9 @@
+import { io, Socket } from 'socket.io-client';
 import { SpectatorMatch, SpectatorAttackEvent } from '../types/spectator';
 
-const liveMatches: SpectatorMatch[] = [
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3001';
+
+const mockListings: SpectatorMatch[] = [
   {
     gameId: 'game-1001',
     creator: 'erd1alpha...1234',
@@ -23,27 +26,51 @@ const liveMatches: SpectatorMatch[] = [
   },
 ];
 
-const liveEvents: Record<string, SpectatorAttackEvent[]> = {
-  'game-1001': [
-    { gameId: 'game-1001', x: 3, y: 4, result: 'Hit', attacker: 'erd1alpha...1234', timestamp: Math.floor(Date.now() / 1000) - 50 },
-    { gameId: 'game-1001', x: 6, y: 2, result: 'Miss', attacker: 'erd1beta...5678', timestamp: Math.floor(Date.now() / 1000) - 25 },
-  ],
-  'game-1002': [
-    { gameId: 'game-1002', x: 8, y: 8, result: 'Sunk', attacker: 'erd1capt...9999', timestamp: Math.floor(Date.now() / 1000) - 40 },
-  ],
-};
-
 export class SpectatorService {
+  private socket: Socket | null = null;
+  private listeners = new Map<string, (event: SpectatorAttackEvent) => void>();
+
   async getLiveMatches(): Promise<SpectatorMatch[]> {
-    return Promise.resolve(liveMatches);
+    return Promise.resolve(mockListings);
   }
 
   async getMatchEvents(gameId: string): Promise<SpectatorAttackEvent[]> {
-    return Promise.resolve(liveEvents[gameId] || []);
+    return Promise.resolve([]);
   }
 
-  async watchGame(gameId: string): Promise<{ success: boolean; gameId: string }> {
-    return Promise.resolve({ success: true, gameId });
+  /**
+   * Connect to the spectator WebSocket namespace and subscribe to a game room.
+   * Calls onAttack callback whenever a new attack event arrives.
+   */
+  watchGame(
+    gameId: string,
+    onAttack: (event: SpectatorAttackEvent) => void,
+    onCount?: (count: number) => void
+  ): () => void {
+    if (!this.socket) {
+      this.socket = io(`${BACKEND_URL}/spectator`, { transports: ['websocket'] });
+    }
+
+    this.socket.emit('watch', { gameId });
+
+    const attackHandler = (event: SpectatorAttackEvent) => {
+      if (event.gameId === gameId) onAttack(event);
+    };
+    const countHandler = (data: { gameId: string; count: number }) => {
+      if (data.gameId === gameId) onCount?.(data.count);
+    };
+
+    this.socket.on('attack_event', attackHandler);
+    this.socket.on('spectator_count', countHandler);
+    this.listeners.set(gameId, attackHandler);
+
+    // Return cleanup / unsubscribe function
+    return () => {
+      this.socket?.emit('stop_watch', { gameId });
+      this.socket?.off('attack_event', attackHandler);
+      this.socket?.off('spectator_count', countHandler);
+      this.listeners.delete(gameId);
+    };
   }
 }
 

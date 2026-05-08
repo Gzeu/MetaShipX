@@ -1,28 +1,44 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { battleAudio, BattleSoundName } from '../audio/BattleAudioManager';
 
-export type BattleSoundName = 'hit' | 'miss' | 'sunk' | 'gameover';
-
-const SOUND_LIBRARY: Record<BattleSoundName, string> = {
-  hit: '/sounds/hit.mp3',
-  miss: '/sounds/miss.mp3',
-  sunk: '/sounds/sunk.mp3',
-  gameover: '/sounds/gameover.mp3',
-};
-
+/**
+ * Hook for battle audio + mute toggle.
+ * Usage:
+ *   const { play, muted, toggleMute } = useBattleAudio();
+ *   play('hit'); // on attack result
+ */
 export function useBattleAudio() {
-  const audioMap = useMemo(() => {
-    if (typeof Audio === 'undefined') return null;
-    return Object.fromEntries(
-      Object.entries(SOUND_LIBRARY).map(([name, src]) => [name, new Audio(src)])
-    ) as Record<BattleSoundName, HTMLAudioElement>;
+  const [muted, setMuted] = useState(false);
+
+  const play = useCallback((name: BattleSoundName) => {
+    battleAudio.play(name);
   }, []);
 
-  const play = (name: BattleSoundName) => {
-    const audio = audioMap?.[name];
-    if (!audio) return;
-    audio.currentTime = 0;
-    void audio.play().catch(() => undefined);
-  };
+  const toggleMute = useCallback(() => {
+    const next = !battleAudio.isMuted();
+    battleAudio.setMuted(next);
+    setMuted(next);
+  }, []);
 
-  return { play, sounds: SOUND_LIBRARY };
+  return { play, muted, toggleMute };
+}
+
+/**
+ * Hook to play the correct sound automatically from an AttackResult.
+ */
+export function useAttackSound() {
+  const lastResult = useRef<string | null>(null);
+
+  const playForResult = useCallback((result: 'Hit' | 'Miss' | 'Sunk' | 'GameOver' | null | undefined, youAreAttacker: boolean) => {
+    if (!result || result === lastResult.current) return;
+    lastResult.current = result;
+    switch (result) {
+      case 'Hit':     battleAudio.play('hit');      break;
+      case 'Miss':    battleAudio.play('miss');     break;
+      case 'Sunk':    battleAudio.play('sunk');     break;
+      case 'GameOver': battleAudio.play(youAreAttacker ? 'victory' : 'defeat'); break;
+    }
+  }, []);
+
+  return { playForResult };
 }

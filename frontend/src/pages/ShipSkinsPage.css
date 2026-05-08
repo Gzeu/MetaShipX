@@ -1,0 +1,35 @@
+.skins-page { padding: 2rem; min-height: 100vh; background: #080d18; color: #e2e8f0; }
+.skins-page__header h1 { font-size: clamp(1.5rem, 3vw, 2.2rem); font-weight: 800; }
+.skins-page__header p  { color: rgba(255,255,255,0.45); margin-top: 4px; font-size: 0.875rem; }
+.skins-page__ship-info { display: flex; gap: 16px; align-items: center; margin: 1.25rem 0; font-size: 0.875rem; color: rgba(255,255,255,0.5); }
+.skins-page__active-skin { color: #c084fc; font-weight: 600; }
+.skins-page__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-top: 0.5rem; }
+.skins-page__loading, .skins-page__empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 4rem; color: rgba(255,255,255,0.35); }
+.skins-page__empty span { font-size: 2.5rem; }
+
+.skin-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 18px;
+  overflow: hidden;
+  transition: border-color 200ms, box-shadow 200ms, transform 180ms;
+  display: flex;
+  flex-direction: column;
+}
+.skin-card:hover { border-color: var(--glow); box-shadow: 0 0 20px color-mix(in srgb, var(--glow) 25%, transparent); transform: translateY(-2px); }
+.skin-card--equipped { border-color: var(--glow); box-shadow: 0 0 28px color-mix(in srgb, var(--glow) 30%, transparent); }
+.skin-card--locked { opacity: 0.55; filter: grayscale(0.4); }
+
+.skin-card__preview { position: relative; aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center; }
+.skin-card__ship-icon { font-size: 3rem; filter: drop-shadow(0 0 12px currentColor); }
+.skin-card__lock { position: absolute; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; font-size: 1.5rem; backdrop-filter: blur(2px); }
+
+.skin-card__body { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.skin-card__name  { font-weight: 700; font-size: 0.95rem; color: #f8fafc; }
+.skin-card__rarity { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid; border-radius: 6px; padding: 2px 7px; width: fit-content; }
+.skin-card__equipped-badge { font-size: 0.72rem; color: #4ade80; font-weight: 600; }
+
+.skin-card__btn { margin: 0 14px 14px; padding: 9px; border-radius: 10px; font-weight: 700; font-size: 0.82rem; cursor: pointer; background: rgba(255,255,255,0.08); color: #e2e8f0; transition: background 150ms; }
+.skin-card__btn:not(:disabled):hover { background: rgba(255,255,255,0.15); }
+.skin-card__btn:disabled { opacity: 0.45; cursor: default; }
+.skin-card--equipped .skin-card__btn { background: color-mix(in srgb, var(--glow) 20%, transparent); color: #fff; }

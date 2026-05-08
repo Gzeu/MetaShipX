@@ -1,0 +1,33 @@
+.spectator-page { padding: 2rem; display: flex; flex-direction: column; gap: 1.5rem; min-height: 100vh; background: #080d18; color: #e2e8f0; }
+.spectator-page__header h1 { font-size: clamp(1.5rem, 3vw, 2.2rem); font-weight: 800; color: #f8fafc; }
+.spectator-page__header p  { color: rgba(255,255,255,0.5); margin-top: 4px; }
+.spectator-page__layout { display: grid; grid-template-columns: 280px 1fr; gap: 1.5rem; }
+@media (max-width: 768px) { .spectator-page__layout { grid-template-columns: 1fr; } }
+
+.spectator-page__sidebar h2 { font-size: 0.9rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.4); margin-bottom: 12px; }
+.spectator-card { width: 100%; text-align: left; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; cursor: pointer; transition: background 160ms, border-color 160ms; color: inherit; }
+.spectator-card:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.16); }
+.spectator-card--active { border-color: #4f9eff; background: rgba(79, 158, 255, 0.08); }
+.spectator-card__ids { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; font-weight: 600; }
+.spectator-card__vs { color: rgba(255,255,255,0.3); font-weight: 400; }
+.spectator-card__meta { display: flex; justify-content: space-between; margin-top: 8px; font-size: 0.78rem; color: rgba(255,255,255,0.5); }
+.spectator-card__bet { color: #4f9eff; font-weight: 600; }
+
+.spectator-page__main { min-height: 400px; }
+.spectator-page__boards { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+@media (max-width: 600px) { .spectator-page__boards { grid-template-columns: 1fr; } }
+
+.spectator-page__feed { margin-top: 1.5rem; }
+.spectator-page__feed h3 { font-size: 0.85rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(255,255,255,0.4); margin-bottom: 10px; }
+
+.feed-item { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.83rem; }
+.feed-item strong { font-weight: 800; width: 70px; }
+.feed-item--hit strong    { color: #ff6b6b; }
+.feed-item--miss strong   { color: #74d7f7; }
+.feed-item--sunk strong   { color: #ffa500; }
+.feed-item--gameover strong { color: #c084fc; }
+.feed-item small { color: rgba(255,255,255,0.3); }
+
+.spectator-page__empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 320px; gap: 12px; color: rgba(255,255,255,0.3); }
+.spectator-page__empty-icon { font-size: 3rem; }
+.spectator-page__loading { color: rgba(255,255,255,0.4); font-size: 0.875rem; }

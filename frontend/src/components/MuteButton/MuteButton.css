@@ -1,0 +1,12 @@
+.mute-btn {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: background 150ms ease, transform 120ms ease;
+  color: inherit;
+}
+.mute-btn:hover { background: rgba(255,255,255,0.12); transform: scale(1.07); }
+.mute-btn:active { transform: scale(0.95); }

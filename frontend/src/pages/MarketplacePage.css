@@ -1,166 +1,66 @@
-/* MarketplacePage.css */
-.marketplace-page {
-  max-width: 1100px;
-  margin-inline: auto;
-  padding: 2rem 1rem 4rem;
-}
+.marketplace { padding: 2rem; min-height: 100vh; background: #080d18; color: #e2e8f0; }
+.marketplace__header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1.5rem; }
+.marketplace__header h1 { font-size: clamp(1.5rem, 3vw, 2.2rem); font-weight: 800; }
+.marketplace__header p  { color: rgba(255,255,255,0.45); margin-top: 4px; font-size: 0.875rem; }
+.marketplace__list-btn { background: #4f9eff; color: #fff; border-radius: 12px; padding: 10px 20px; font-weight: 700; font-size: 0.875rem; cursor: pointer; transition: background 150ms; }
+.marketplace__list-btn:hover { background: #3b82f6; }
 
-.marketplace-title {
-  font-size: clamp(1.5rem, 2vw + 1rem, 2.25rem);
-  font-weight: 700;
-  margin-bottom: 1.5rem;
-  color: var(--color-text, #cdccca);
-}
+.marketplace__controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.marketplace__filters  { display: flex; gap: 8px; flex-wrap: wrap; }
+.filter-pill { padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); cursor: pointer; transition: all 150ms; }
+.filter-pill:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.filter-pill--active { background: rgba(79,158,255,0.18); border-color: #4f9eff; color: #4f9eff; }
+.marketplace__sort { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 7px 12px; color: #e2e8f0; font-size: 0.82rem; cursor: pointer; }
 
-/* Tabs */
-.marketplace-tabs {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1.75rem;
-  border-bottom: 1px solid var(--color-border, #393836);
-  padding-bottom: 0.5rem;
-}
-.mkt-tab {
-  padding: 0.5rem 1.25rem;
-  border-radius: 0.5rem 0.5rem 0 0;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--color-text-muted, #797876);
-  background: transparent;
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: color 180ms, background 180ms, border-color 180ms;
-}
-.mkt-tab:hover {
-  color: var(--color-text, #cdccca);
-  background: var(--color-surface-offset, #1d1c1a);
-}
-.mkt-tab.active {
-  color: var(--color-primary, #4f98a3);
-  background: var(--color-surface, #1c1b19);
-  border-color: var(--color-border, #393836);
-  border-bottom-color: var(--color-surface, #1c1b19);
-}
+.marketplace__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
 
-/* Tx feedback */
-.mkt-tx-msg {
-  padding: 0.75rem 1rem;
-  border-radius: 0.5rem;
-  font-size: 0.875rem;
-  margin-bottom: 1.25rem;
-}
-.mkt-tx-msg--ok  { background: color-mix(in oklch, var(--color-success, #6daa45) 12%, transparent); color: var(--color-success, #6daa45); }
-.mkt-tx-msg--err { background: color-mix(in oklch, var(--color-error,   #d163a7) 12%, transparent); color: var(--color-error,   #d163a7); }
-
-/* Mint grid */
-.mkt-mint-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr));
-  gap: 1.25rem;
-}
-.mkt-ship-card {
-  background: var(--color-surface, #1c1b19);
-  border: 1px solid var(--color-border, #393836);
-  border-radius: 0.75rem;
-  padding: 1.5rem 1rem;
+.ship-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 18px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.6rem;
-  text-align: center;
-  transition: box-shadow 200ms, transform 200ms;
+  gap: 6px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 180ms, box-shadow 180ms, transform 180ms;
 }
-.mkt-ship-card:hover {
-  box-shadow: 0 4px 20px oklch(0 0 0 / 0.35);
-  transform: translateY(-2px);
+.ship-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at top right, color-mix(in srgb, var(--accent, #64748b) 12%, transparent), transparent 55%);
+  pointer-events: none;
 }
-.mkt-ship-card h2  { font-size: 1rem; font-weight: 600; margin: 0; }
-.mkt-ship-emoji    { font-size: 2.5rem; line-height: 1; }
-.mkt-ship-meta     { font-size: 0.8rem; color: var(--color-text-muted, #797876); margin: 0; }
-.mkt-ship-price    { font-size: 0.95rem; font-weight: 600; color: var(--color-primary, #4f98a3); margin: 0; }
+.ship-card:hover {
+  border-color: var(--accent, #64748b);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent, #64748b) 20%, transparent);
+  transform: translateY(-3px);
+}
+.ship-card__type   { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.ship-card__name   { font-size: 1.05rem; font-weight: 800; color: #f8fafc; margin-top: 2px; }
+.ship-card__stats  { display: flex; gap: 8px; font-size: 0.78rem; color: rgba(255,255,255,0.55); flex-wrap: wrap; }
+.ship-card__skin   { color: #c084fc; }
+.ship-card__seller { font-size: 0.75rem; color: rgba(255,255,255,0.35); }
+.ship-card__listed { font-size: 0.72rem; color: rgba(255,255,255,0.25); }
+.ship-card__price  { font-size: 1.1rem; font-weight: 900; color: #4f9eff; margin-top: 6px; }
+.ship-card__buy-btn { margin-top: 10px; background: #4f9eff; color: #fff; border-radius: 10px; padding: 9px; font-weight: 700; font-size: 0.85rem; cursor: pointer; transition: background 150ms, transform 120ms; text-align: center; }
+.ship-card__buy-btn:hover  { background: #3b82f6; }
+.ship-card__buy-btn:active { transform: scale(0.96); }
 
-/* Fleet / upgrade grids */
-.mkt-fleet-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 1fr));
-  gap: 1rem;
-  margin-top: 1rem;
-}
-.mkt-fleet-card {
-  background: var(--color-surface, #1c1b19);
-  border: 1px solid var(--color-border, #393836);
-  border-radius: 0.75rem;
-  padding: 1.25rem 0.75rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.4rem;
-  text-align: center;
-  cursor: pointer;
-  transition: border-color 180ms, box-shadow 180ms;
-}
-.mkt-fleet-card:hover   { border-color: var(--color-primary, #4f98a3); }
-.mkt-fleet-card.selected {
-  border-color: var(--color-primary, #4f98a3);
-  box-shadow: 0 0 0 2px var(--color-primary, #4f98a3);
-}
-.mkt-fleet-card.maxed   { opacity: 0.5; cursor: default; }
-.mkt-fleet-card h3      { font-size: 0.9rem; font-weight: 600; margin: 0; }
-.mkt-ship-level         { font-size: 0.8rem; color: var(--color-text-muted, #797876); margin: 0; }
-.mkt-ship-record        { font-size: 0.75rem; color: var(--color-text-faint, #5a5957); margin: 0; }
-.mkt-maxlevel {
-  font-size: 0.7rem;
-  font-weight: 700;
-  padding: 0.15rem 0.5rem;
-  border-radius: 9999px;
-  background: var(--color-gold, #e8af34);
-  color: #111;
-}
+.marketplace__loading { text-align: center; padding: 4rem; color: rgba(255,255,255,0.4); }
+.marketplace__empty   { display: flex; flex-direction: column; align-items: center; padding: 4rem; color: rgba(255,255,255,0.35); gap: 12px; }
+.marketplace__empty div { font-size: 3rem; }
 
-/* Upgrade confirm */
-.mkt-upgrade-confirm {
-  margin-top: 1.5rem;
-  padding: 1.25rem;
-  background: var(--color-surface-offset, #1d1c1a);
-  border: 1px solid var(--color-border, #393836);
-  border-radius: 0.75rem;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-.mkt-upgrade-confirm p { margin: 0; flex: 1; }
-.mkt-upgrade-hint      { color: var(--color-text-muted, #797876); font-size: 0.875rem; margin-bottom: 0.5rem; }
-.mkt-empty, .mkt-connect {
-  padding: 3rem 1rem;
-  text-align: center;
-  color: var(--color-text-muted, #797876);
-}
-.mkt-loading { color: var(--color-text-muted, #797876); font-size: 0.875rem; }
-
-/* Buttons */
-.marketplace-page .btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.5rem 1.25rem;
-  border-radius: 0.5rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 180ms, opacity 180ms;
-  text-decoration: none;
-  border: none;
-}
-.marketplace-page .btn:disabled          { opacity: 0.5; cursor: not-allowed; }
-.marketplace-page .btn-primary           { background: var(--color-primary, #4f98a3); color: #fff; }
-.marketplace-page .btn-primary:hover:not(:disabled) { background: var(--color-primary-hover, #227f8b); }
-.marketplace-page .btn-accent            { background: var(--color-gold, #e8af34); color: #111; }
-.marketplace-page .btn-accent:hover:not(:disabled)  { background: var(--color-gold-hover, #fdc551); }
-.marketplace-page .btn-ghost             { background: transparent; color: var(--color-text-muted, #797876); border: 1px solid var(--color-border, #393836); }
-.marketplace-page .btn-ghost:hover:not(:disabled)   { color: var(--color-text, #cdccca); }
-
-@media (max-width: 480px) {
-  .mkt-mint-grid  { grid-template-columns: repeat(2, 1fr); }
-  .mkt-fleet-grid { grid-template-columns: repeat(2, 1fr); }
-}
+/* Modal */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal { background: #0f172a; border: 1px solid rgba(255,255,255,0.12); border-radius: 20px; padding: 28px 32px; min-width: 340px; display: flex; flex-direction: column; gap: 16px; }
+.modal h2 { font-size: 1.2rem; font-weight: 800; color: #f8fafc; }
+.modal label { display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem; color: rgba(255,255,255,0.6); }
+.modal input { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 10px 14px; color: #e2e8f0; font-size: 0.9rem; }
+.modal input:focus { outline: 2px solid #4f9eff; outline-offset: 2px; }
+.modal__actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+.modal__actions button { padding: 9px 18px; border-radius: 10px; font-weight: 600; font-size: 0.85rem; cursor: pointer; }
+.modal__actions button:first-child { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7); }
+.modal__confirm { background: #4f9eff !important; color: #fff !important; }
