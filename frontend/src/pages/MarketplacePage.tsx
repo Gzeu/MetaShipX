@@ -1,25 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
-import { nftService, ShipMetadata } from '../services/nft.service';
+import { nftService, ShipMetadata, ShipType } from '../services/nft.service';
 import './MarketplacePage.css';
 
 const SHIP_TYPES = ['Destroyer', 'Submarine', 'Cruiser', 'Battleship', 'Carrier'] as const;
-type ShipType = typeof SHIP_TYPES[number];
 
 const SHIP_PRICES: Record<ShipType, string> = {
-  Destroyer: '0.05',
-  Submarine: '0.08',
-  Cruiser: '0.12',
-  Battleship: '0.18',
-  Carrier: '0.25',
+  Destroyer: '0.05', Submarine: '0.08', Cruiser: '0.12', Battleship: '0.18', Carrier: '0.25',
 };
 
 const SHIP_EMOJI: Record<ShipType, string> = {
-  Destroyer: '🚤',
-  Submarine: '🤿',
-  Cruiser: '⛵',
-  Battleship: '🛥️',
-  Carrier: '🛳️',
+  Destroyer: '🚤', Submarine: '🤿', Cruiser: '⛵', Battleship: '🛥️', Carrier: '🛳️',
 };
 
 const TABS = ['Mint Ship', 'My Fleet', 'Upgrade'] as const;
@@ -27,13 +18,14 @@ type Tab = typeof TABS[number];
 
 export const MarketplacePage: React.FC = () => {
   const { address } = useGetAccountInfo();
-  const [activeTab, setActiveTab] = useState<Tab>('Mint Ship');
-  const [mintPrice, setMintPrice] = useState<string>('0');
-  const [userShips, setUserShips] = useState<ShipMetadata[]>([]);
-  const [selectedShip, setSelectedShip] = useState<ShipType>('Destroyer');
-  const [upgradeNonce, setUpgradeNonce] = useState<string>('');
-  const [loading, setLoading] = useState(false);
-  const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [activeTab, setActiveTab]   = useState<Tab>('Mint Ship');
+  const [mintPrice, setMintPrice]   = useState<string>('0');
+  const [userShips, setUserShips]   = useState<ShipMetadata[]>([]);
+  const [selectedShip, setSelected] = useState<ShipType>('Destroyer');
+  const [upgradeNonce, setUpgradeNonce] = useState('');
+  const [upgradeCost, setUpgradeCost]   = useState('0.05');
+  const [loading, setLoading]       = useState(false);
+  const [feedback, setFeedback]     = useState<{ ok: boolean; msg: string } | null>(null);
   const [confirmMint, setConfirmMint] = useState(false);
 
   useEffect(() => {
@@ -41,21 +33,21 @@ export const MarketplacePage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (address) {
-      nftService.getUserShips(address).then(setUserShips);
-    }
+    if (address) nftService.getUserShips(address).then(setUserShips);
   }, [address]);
+
+  const reloadShips = async () => {
+    if (address) setUserShips(await nftService.getUserShips(address));
+  };
 
   const handleMint = async () => {
     if (!address) return;
-    setLoading(true);
-    setFeedback(null);
+    setLoading(true); setFeedback(null);
     try {
-      await nftService.mintShip(address, selectedShip, `${selectedShip} #${Date.now()}`);
+      await nftService.mintShip(selectedShip, `${selectedShip} #${Date.now()}`);
       setFeedback({ ok: true, msg: `${selectedShip} minted! Check wallet for confirmation.` });
       setConfirmMint(false);
-      const ships = await nftService.getUserShips(address);
-      setUserShips(ships);
+      await reloadShips();
     } catch (e: unknown) {
       setFeedback({ ok: false, msg: e instanceof Error ? e.message : 'Mint failed' });
     } finally {
@@ -65,13 +57,11 @@ export const MarketplacePage: React.FC = () => {
 
   const handleUpgrade = async () => {
     if (!address || !upgradeNonce) return;
-    setLoading(true);
-    setFeedback(null);
+    setLoading(true); setFeedback(null);
     try {
-      await nftService.upgradeShip(address, parseInt(upgradeNonce, 10));
+      await nftService.upgradeShip(parseInt(upgradeNonce, 10), upgradeCost);
       setFeedback({ ok: true, msg: `Ship #${upgradeNonce} upgrade transaction sent!` });
-      const ships = await nftService.getUserShips(address);
-      setUserShips(ships);
+      await reloadShips();
     } catch (e: unknown) {
       setFeedback({ ok: false, msg: e instanceof Error ? e.message : 'Upgrade failed' });
     } finally {
@@ -84,11 +74,11 @@ export const MarketplacePage: React.FC = () => {
       <h1 className="mp-title">⚓ Ship Marketplace</h1>
 
       <div className="mp-tabs">
-        {TABS.map((tab) => (
+        {TABS.map(tab => (
           <button
             key={tab}
-            className={`mp-tab ${activeTab === tab ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab)}
+            className={`mp-tab${activeTab === tab ? ' active' : ''}`}
+            onClick={() => { setActiveTab(tab); setFeedback(null); }}
           >
             {tab}
           </button>
@@ -99,15 +89,16 @@ export const MarketplacePage: React.FC = () => {
         <div className={`mp-feedback ${feedback.ok ? 'ok' : 'err'}`}>{feedback.msg}</div>
       )}
 
+      {/* ── Mint tab ─────────────────────────────────────────── */}
       {activeTab === 'Mint Ship' && (
         <div className="mp-mint-section">
-          <p className="mp-subtitle">Select a ship type to mint as NFT on MultiversX</p>
+          <p className="mp-subtitle">Select a ship type to mint as SFT on MultiversX</p>
           <div className="ship-grid">
-            {SHIP_TYPES.map((ship) => (
+            {SHIP_TYPES.map(ship => (
               <button
                 key={ship}
-                className={`ship-card ${selectedShip === ship ? 'selected' : ''}`}
-                onClick={() => { setSelectedShip(ship); setConfirmMint(false); }}
+                className={`ship-card${selectedShip === ship ? ' selected' : ''}`}
+                onClick={() => { setSelected(ship); setConfirmMint(false); }}
               >
                 <span className="ship-emoji">{SHIP_EMOJI[ship]}</span>
                 <span className="ship-name">{ship}</span>
@@ -122,7 +113,9 @@ export const MarketplacePage: React.FC = () => {
             </button>
           ) : (
             <div className="confirm-panel">
-              <p>Confirm mint of <strong>{selectedShip}</strong> for <strong>{SHIP_PRICES[selectedShip]} EGLD</strong>?</p>
+              <p>Confirm mint of <strong>{selectedShip}</strong> for{' '}
+                <strong>{SHIP_PRICES[selectedShip]} EGLD</strong>?
+              </p>
               <div className="confirm-actions">
                 <button className="btn-primary" onClick={handleMint} disabled={loading}>
                   {loading ? 'Sending…' : 'Confirm'}
@@ -131,11 +124,11 @@ export const MarketplacePage: React.FC = () => {
               </div>
             </div>
           )}
-
           {!address && <p className="mp-warn">Connect wallet to mint ships.</p>}
         </div>
       )}
 
+      {/* ── Fleet tab ────────────────────────────────────────── */}
       {activeTab === 'My Fleet' && (
         <div className="mp-fleet-section">
           {userShips.length === 0 ? (
@@ -146,9 +139,9 @@ export const MarketplacePage: React.FC = () => {
             </div>
           ) : (
             <div className="fleet-grid">
-              {userShips.map((ship) => (
+              {userShips.map(ship => (
                 <div key={ship.nonce} className="fleet-card">
-                  <div className="fleet-card-emoji">{SHIP_EMOJI[ship.shipType as ShipType] ?? '🚢'}</div>
+                  <div className="fleet-card-emoji">{SHIP_EMOJI[ship.shipType] ?? '🚢'}</div>
                   <div className="fleet-card-name">{ship.name}</div>
                   <div className="fleet-card-meta">
                     <span>Type: {ship.shipType}</span>
@@ -163,6 +156,7 @@ export const MarketplacePage: React.FC = () => {
         </div>
       )}
 
+      {/* ── Upgrade tab ──────────────────────────────────────── */}
       {activeTab === 'Upgrade' && (
         <div className="mp-upgrade-section">
           <p className="mp-subtitle">Upgrade a ship to increase its level (max 10)</p>
@@ -170,13 +164,22 @@ export const MarketplacePage: React.FC = () => {
             <label htmlFor="upgrade-nonce">Ship Nonce</label>
             <input
               id="upgrade-nonce"
-              type="number"
-              min={1}
-              placeholder="e.g. 1"
+              type="number" min={1} placeholder="e.g. 1"
               value={upgradeNonce}
-              onChange={(e) => setUpgradeNonce(e.target.value)}
+              onChange={e => setUpgradeNonce(e.target.value)}
             />
-            <button className="btn-primary" onClick={handleUpgrade} disabled={loading || !upgradeNonce || !address}>
+            <label htmlFor="upgrade-cost">Upgrade Cost (EGLD)</label>
+            <input
+              id="upgrade-cost"
+              type="number" min={0.001} step={0.001}
+              value={upgradeCost}
+              onChange={e => setUpgradeCost(e.target.value)}
+            />
+            <button
+              className="btn-primary"
+              onClick={handleUpgrade}
+              disabled={loading || !upgradeNonce || !address}
+            >
               {loading ? 'Sending…' : 'Upgrade Ship'}
             </button>
           </div>

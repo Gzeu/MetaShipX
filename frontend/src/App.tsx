@@ -8,7 +8,6 @@ import { ENVIRONMENT, WALLETCONNECT_PROJECT_ID } from './config';
 import { Navbar } from './components/Navbar';
 import { PageLoader } from './components/PageLoader';
 
-// Lazy-loaded pages
 const HomePage        = lazy(() => import('./pages/HomePage'));
 const GamePage        = lazy(() => import('./pages/Game'));
 const LobbyPage       = lazy(() => import('./pages/LobbyPage/LobbyPage'));
@@ -21,19 +20,16 @@ const ProfilePage     = lazy(() => import('./pages/ProfilePage'));
 const UnlockPage      = lazy(() => import('./pages/UnlockPage/UnlockPage'));
 const NotFoundPage    = lazy(() => import('./pages/NotFoundPage'));
 
-const dappConfig = {
-  environment: ENVIRONMENT as 'devnet' | 'testnet' | 'mainnet',
-  customNetworkConfig: {
-    name: 'MetaShipX',
-    walletConnectV2ProjectId: WALLETCONNECT_PROJECT_ID,
-  },
-};
-
 export default function App() {
   return (
     <DappProvider
-      environment={dappConfig.environment}
-      customNetworkConfig={dappConfig.customNetworkConfig}
+      environment={ENVIRONMENT}
+      customNetworkConfig={{
+        name: 'MetaShipX',
+        ...(WALLETCONNECT_PROJECT_ID && {
+          walletConnectV2ProjectId: WALLETCONNECT_PROJECT_ID,
+        }),
+      }}
     >
       <BrowserRouter>
         <Navbar />
@@ -42,18 +38,18 @@ export default function App() {
         <TransactionsToastList />
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            <Route path="/"            element={<HomePage />} />
-            <Route path="/game/:id"    element={<GamePage />} />
-            <Route path="/lobby"       element={<LobbyPage />} />
-            <Route path="/leaderboard" element={<LeaderboardPage />} />
-            <Route path="/staking"     element={<StakingPage />} />
-            <Route path="/marketplace" element={<MarketplacePage />} />
+            <Route path="/"             element={<HomePage />} />
+            <Route path="/game/:id"     element={<GamePage />} />
+            <Route path="/lobby"        element={<LobbyPage />} />
+            <Route path="/leaderboard"  element={<LeaderboardPage />} />
+            <Route path="/staking"      element={<StakingPage />} />
+            <Route path="/marketplace"  element={<MarketplacePage />} />
             <Route path="/spectate/:id" element={<SpectatorPage />} />
-            <Route path="/tournaments" element={<TournamentsPage />} />
-            <Route path="/profile"     element={<ProfilePage />} />
-            <Route path="/unlock"      element={<UnlockPage />} />
-            <Route path="/404"         element={<NotFoundPage />} />
-            <Route path="*"            element={<Navigate to="/404" replace />} />
+            <Route path="/tournaments"  element={<TournamentsPage />} />
+            <Route path="/profile"      element={<ProfilePage />} />
+            <Route path="/unlock"       element={<UnlockPage />} />
+            <Route path="/404"          element={<NotFoundPage />} />
+            <Route path="*"             element={<Navigate to="/404" replace />} />
           </Routes>
         </Suspense>
       </BrowserRouter>

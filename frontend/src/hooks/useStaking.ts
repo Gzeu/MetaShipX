@@ -1,10 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import {
-  stake,
-  unstake,
-  claimRewards,
-  getStakingInfo,
-  StakingInfo,
+  stake, unstake, claimRewards, getStakingInfo, StakingInfo,
 } from '../services/staking.service';
 
 export interface UseStakingReturn {
@@ -17,43 +13,35 @@ export interface UseStakingReturn {
   refresh: () => Promise<void>;
 }
 
-export function useStaking(address: string | null): UseStakingReturn {
-  const [info, setInfo] = useState<StakingInfo | null>(null);
+export function useStaking(address: string | null | undefined): UseStakingReturn {
+  const [info, setInfo]       = useState<StakingInfo | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]     = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!address) return;
     try {
-      const data = await getStakingInfo(address);
-      setInfo(data);
-    } catch (e: any) {
-      setError(e.message);
+      setInfo(await getStakingInfo(address));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load staking info');
     }
   }, [address]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const handleStake = useCallback(async (egld: string) => {
-    setLoading(true); setError(null);
-    try { await stake(egld); await refresh(); }
-    catch (e: any) { setError(e.message); }
-    finally { setLoading(false); }
-  }, [refresh]);
+  const run = useCallback(
+    async (fn: () => Promise<unknown>) => {
+      setLoading(true); setError(null);
+      try { await fn(); await refresh(); }
+      catch (e: unknown) { setError(e instanceof Error ? e.message : 'Action failed'); }
+      finally { setLoading(false); }
+    },
+    [refresh],
+  );
 
-  const handleUnstake = useCallback(async (egld: string) => {
-    setLoading(true); setError(null);
-    try { await unstake(egld); await refresh(); }
-    catch (e: any) { setError(e.message); }
-    finally { setLoading(false); }
-  }, [refresh]);
-
-  const handleClaim = useCallback(async () => {
-    setLoading(true); setError(null);
-    try { await claimRewards(); await refresh(); }
-    catch (e: any) { setError(e.message); }
-    finally { setLoading(false); }
-  }, [refresh]);
+  const handleStake   = useCallback((egld: string) => run(() => stake(egld)),   [run]);
+  const handleUnstake = useCallback((egld: string) => run(() => unstake(egld)), [run]);
+  const handleClaim   = useCallback(() => run(() => claimRewards()),            [run]);
 
   return { info, loading, error, handleStake, handleUnstake, handleClaim, refresh };
 }
