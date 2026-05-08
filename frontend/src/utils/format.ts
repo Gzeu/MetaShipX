@@ -1,64 +1,73 @@
-const EGLD_DECIMALS = 18;
-const DENOM = BigInt(10 ** EGLD_DECIMALS);
+/**
+ * MetaShipX — Formatting Utilities
+ */
 
-export function fmtEgld(wei: string, decimals = 4): string {
-  try {
-    const n = BigInt(wei);
-    const whole = n / DENOM;
-    const frac  = n % DENOM;
-    const fracStr = frac.toString().padStart(EGLD_DECIMALS, '0').slice(0, decimals);
-    return `${whole}.${fracStr} EGLD`;
-  } catch {
-    return '0.0000 EGLD';
-  }
+const EGLD_DENOMINATION = 18;
+
+/**
+ * Convert raw denomination string to EGLD display string.
+ * e.g. "1000000000000000000" → "1.00 EGLD"
+ */
+export function formatEgld(raw: string | bigint, decimals = 4): string {
+  const value = typeof raw === 'string' ? BigInt(raw) : raw;
+  const divisor = 10n ** BigInt(EGLD_DENOMINATION);
+  const whole = value / divisor;
+  const remainder = value % divisor;
+  const fracStr = remainder.toString().padStart(EGLD_DENOMINATION, '0').slice(0, decimals);
+  return `${whole}.${fracStr} EGLD`;
 }
 
-export function egldToWei(egld: string): string {
-  try {
-    const [whole, frac = ''] = egld.split('.');
-    const fracPadded = frac.padEnd(EGLD_DECIMALS, '0').slice(0, EGLD_DECIMALS);
-    return (BigInt(whole) * DENOM + BigInt(fracPadded)).toString();
-  } catch {
-    return '0';
-  }
+/**
+ * Convert EGLD float to raw denomination BigInt.
+ * e.g. 1.5 → 1500000000000000000n
+ */
+export function egldToRaw(egld: number): bigint {
+  const [whole, frac = ''] = egld.toString().split('.');
+  const fracPadded = frac.padEnd(EGLD_DENOMINATION, '0').slice(0, EGLD_DENOMINATION);
+  return BigInt(whole) * 10n ** BigInt(EGLD_DENOMINATION) + BigInt(fracPadded);
 }
 
-export function fmtAddress(address: string, chars = 6): string {
-  if (!address || address.length < chars * 2 + 3) return address;
+/**
+ * Shorten a bech32 MultiversX address for display.
+ * e.g. "erd1abc...xyz"
+ */
+export function shortenAddress(address: string, chars = 6): string {
+  if (!address || address.length < chars * 2) return address;
   return `${address.slice(0, chars)}...${address.slice(-chars)}`;
 }
 
-export function fmtWinRate(wins: number, total: number): string {
-  if (total === 0) return '0%';
-  return `${Math.round((wins / total) * 100)}%`;
+/**
+ * Format a timestamp (seconds) to relative time string.
+ * e.g. "2 minutes ago"
+ */
+export function timeAgo(timestamp: number): string {
+  const seconds = Math.floor(Date.now() / 1000) - timestamp;
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
 }
 
-export function fmtDate(ts: number): string {
-  return new Date(ts).toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
+/**
+ * Format APR from basis points to percentage string.
+ * e.g. 2000 → "20.00%"
+ */
+export function formatApr(bps: number): string {
+  return `${(bps / 100).toFixed(2)}%`;
 }
 
-export function fmtDateTime(ts: number): string {
-  return new Date(ts).toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-export function fmtDuration(ms: number): string {
-  if (ms < 0) return '0s';
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${s % 60}s`;
-  return `${Math.floor(m / 60)}h ${m % 60}m`;
-}
-
-export function fmtCountdown(targetMs: number): string {
-  return fmtDuration(targetMs - Date.now());
+/**
+ * Compute pending staking reward.
+ */
+export function computePendingReward(params: {
+  stakedRaw: bigint;
+  aprBps: number;
+  elapsedSeconds: number;
+}): bigint {
+  const { stakedRaw, aprBps, elapsedSeconds } = params;
+  const SECONDS_PER_YEAR = 31_536_000n;
+  const reward =
+    (stakedRaw * BigInt(aprBps) * BigInt(elapsedSeconds)) /
+    (10_000n * SECONDS_PER_YEAR);
+  return reward;
 }
