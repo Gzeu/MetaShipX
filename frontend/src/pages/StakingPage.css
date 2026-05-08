@@ -1,0 +1,134 @@
+/* StakingPage.css */
+.staking-page {
+  max-width: 860px;
+  margin-inline: auto;
+  padding: 2rem 1rem 4rem;
+}
+.staking-title {
+  font-size: clamp(1.5rem, 2vw + 1rem, 2.25rem);
+  font-weight: 700;
+  margin-bottom: 1.75rem;
+  color: var(--color-text, #cdccca);
+}
+
+/* Stats grids */
+.staking-stats,
+.staking-personal {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+}
+.staking-stat {
+  background: var(--color-surface, #1c1b19);
+  border: 1px solid var(--color-border, #393836);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.stat-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-muted, #797876);
+}
+.stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text, #cdccca);
+  font-variant-numeric: tabular-nums;
+}
+.stat-value--accent { color: var(--color-primary, #4f98a3); }
+.stat-value--green  { color: var(--color-success, #6daa45); }
+
+/* Action cards */
+.staking-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.staking-action-card {
+  background: var(--color-surface, #1c1b19);
+  border: 1px solid var(--color-border, #393836);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.staking-action-card h2 { font-size: 1rem; font-weight: 600; margin: 0; }
+
+.staking-input-row {
+  display: flex;
+  gap: 0.5rem;
+}
+.staking-input-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-surface-offset, #1d1c1a);
+  border: 1px solid var(--color-border, #393836);
+  border-radius: 0.5rem;
+  color: var(--color-text, #cdccca);
+  font-size: 0.875rem;
+}
+.staking-input-row input:focus {
+  outline: 2px solid var(--color-primary, #4f98a3);
+  outline-offset: 2px;
+  border-color: transparent;
+}
+.staking-input-row input:disabled { opacity: 0.5; }
+
+.staking-reward-preview { font-size: 0.875rem; color: var(--color-text-muted, #797876); margin: 0; }
+
+/* Feedback */
+.staking-tx-msg {
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+}
+.staking-tx-msg--ok  { background: color-mix(in oklch, var(--color-success, #6daa45) 12%, transparent); color: var(--color-success, #6daa45); }
+.staking-tx-msg--err { background: color-mix(in oklch, var(--color-error,   #d163a7) 12%, transparent); color: var(--color-error,   #d163a7); }
+.staking-error       { color: var(--color-error, #d163a7); font-size: 0.875rem; margin-top: 0.5rem; }
+
+.staking-connect {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 3rem 1rem;
+  text-align: center;
+  color: var(--color-text-muted, #797876);
+}
+
+/* Buttons */
+.staking-page .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 180ms, opacity 180ms;
+  text-decoration: none;
+  border: none;
+}
+.staking-page .btn:disabled            { opacity: 0.5; cursor: not-allowed; }
+.staking-page .btn-primary             { background: var(--color-primary, #4f98a3); color: #fff; }
+.staking-page .btn-primary:hover:not(:disabled)    { background: var(--color-primary-hover, #227f8b); }
+.staking-page .btn-secondary           { background: var(--color-surface-dynamic, #2d2c2a); color: var(--color-text, #cdccca); border: 1px solid var(--color-border, #393836); }
+.staking-page .btn-secondary:hover:not(:disabled)  { background: var(--color-surface-offset, #1d1c1a); }
+.staking-page .btn-accent              { background: var(--color-gold, #e8af34); color: #111; }
+.staking-page .btn-accent:hover:not(:disabled)     { background: var(--color-gold-hover, #fdc551); }
+
+@media (max-width: 600px) {
+  .staking-actions          { grid-template-columns: 1fr; }
+  .staking-stats,
+  .staking-personal         { grid-template-columns: 1fr 1fr; }
+}

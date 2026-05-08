@@ -1,0 +1,166 @@
+/* MarketplacePage.css */
+.marketplace-page {
+  max-width: 1100px;
+  margin-inline: auto;
+  padding: 2rem 1rem 4rem;
+}
+
+.marketplace-title {
+  font-size: clamp(1.5rem, 2vw + 1rem, 2.25rem);
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+  color: var(--color-text, #cdccca);
+}
+
+/* Tabs */
+.marketplace-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.75rem;
+  border-bottom: 1px solid var(--color-border, #393836);
+  padding-bottom: 0.5rem;
+}
+.mkt-tab {
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem 0.5rem 0 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-muted, #797876);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: color 180ms, background 180ms, border-color 180ms;
+}
+.mkt-tab:hover {
+  color: var(--color-text, #cdccca);
+  background: var(--color-surface-offset, #1d1c1a);
+}
+.mkt-tab.active {
+  color: var(--color-primary, #4f98a3);
+  background: var(--color-surface, #1c1b19);
+  border-color: var(--color-border, #393836);
+  border-bottom-color: var(--color-surface, #1c1b19);
+}
+
+/* Tx feedback */
+.mkt-tx-msg {
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  margin-bottom: 1.25rem;
+}
+.mkt-tx-msg--ok  { background: color-mix(in oklch, var(--color-success, #6daa45) 12%, transparent); color: var(--color-success, #6daa45); }
+.mkt-tx-msg--err { background: color-mix(in oklch, var(--color-error,   #d163a7) 12%, transparent); color: var(--color-error,   #d163a7); }
+
+/* Mint grid */
+.mkt-mint-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr));
+  gap: 1.25rem;
+}
+.mkt-ship-card {
+  background: var(--color-surface, #1c1b19);
+  border: 1px solid var(--color-border, #393836);
+  border-radius: 0.75rem;
+  padding: 1.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: center;
+  transition: box-shadow 200ms, transform 200ms;
+}
+.mkt-ship-card:hover {
+  box-shadow: 0 4px 20px oklch(0 0 0 / 0.35);
+  transform: translateY(-2px);
+}
+.mkt-ship-card h2  { font-size: 1rem; font-weight: 600; margin: 0; }
+.mkt-ship-emoji    { font-size: 2.5rem; line-height: 1; }
+.mkt-ship-meta     { font-size: 0.8rem; color: var(--color-text-muted, #797876); margin: 0; }
+.mkt-ship-price    { font-size: 0.95rem; font-weight: 600; color: var(--color-primary, #4f98a3); margin: 0; }
+
+/* Fleet / upgrade grids */
+.mkt-fleet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.mkt-fleet-card {
+  background: var(--color-surface, #1c1b19);
+  border: 1px solid var(--color-border, #393836);
+  border-radius: 0.75rem;
+  padding: 1.25rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 180ms, box-shadow 180ms;
+}
+.mkt-fleet-card:hover   { border-color: var(--color-primary, #4f98a3); }
+.mkt-fleet-card.selected {
+  border-color: var(--color-primary, #4f98a3);
+  box-shadow: 0 0 0 2px var(--color-primary, #4f98a3);
+}
+.mkt-fleet-card.maxed   { opacity: 0.5; cursor: default; }
+.mkt-fleet-card h3      { font-size: 0.9rem; font-weight: 600; margin: 0; }
+.mkt-ship-level         { font-size: 0.8rem; color: var(--color-text-muted, #797876); margin: 0; }
+.mkt-ship-record        { font-size: 0.75rem; color: var(--color-text-faint, #5a5957); margin: 0; }
+.mkt-maxlevel {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  background: var(--color-gold, #e8af34);
+  color: #111;
+}
+
+/* Upgrade confirm */
+.mkt-upgrade-confirm {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  background: var(--color-surface-offset, #1d1c1a);
+  border: 1px solid var(--color-border, #393836);
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.mkt-upgrade-confirm p { margin: 0; flex: 1; }
+.mkt-upgrade-hint      { color: var(--color-text-muted, #797876); font-size: 0.875rem; margin-bottom: 0.5rem; }
+.mkt-empty, .mkt-connect {
+  padding: 3rem 1rem;
+  text-align: center;
+  color: var(--color-text-muted, #797876);
+}
+.mkt-loading { color: var(--color-text-muted, #797876); font-size: 0.875rem; }
+
+/* Buttons */
+.marketplace-page .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 180ms, opacity 180ms;
+  text-decoration: none;
+  border: none;
+}
+.marketplace-page .btn:disabled          { opacity: 0.5; cursor: not-allowed; }
+.marketplace-page .btn-primary           { background: var(--color-primary, #4f98a3); color: #fff; }
+.marketplace-page .btn-primary:hover:not(:disabled) { background: var(--color-primary-hover, #227f8b); }
+.marketplace-page .btn-accent            { background: var(--color-gold, #e8af34); color: #111; }
+.marketplace-page .btn-accent:hover:not(:disabled)  { background: var(--color-gold-hover, #fdc551); }
+.marketplace-page .btn-ghost             { background: transparent; color: var(--color-text-muted, #797876); border: 1px solid var(--color-border, #393836); }
+.marketplace-page .btn-ghost:hover:not(:disabled)   { color: var(--color-text, #cdccca); }
+
+@media (max-width: 480px) {
+  .mkt-mint-grid  { grid-template-columns: repeat(2, 1fr); }
+  .mkt-fleet-grid { grid-template-columns: repeat(2, 1fr); }
+}
