@@ -1,146 +1,117 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { useGetNetworkConfig } from '@multiversx/sdk-dapp/hooks';
-import { ProxyNetworkProvider } from '@multiversx/sdk-network-providers';
-import { SmartContract, ContractFunction, Address } from '@multiversx/sdk-core';
-import { GameBoard } from '../components/GameBoard';
-import { BATTLESHIP_CONTRACT_ADDRESS } from '../config';
-import { useSound } from '../hooks/useSound';
+import { battleshipService } from '../services/battleship.service';
+import { GameBoard } from '../components/GameBoard/GameBoard';
 import './SpectatorPage.css';
-
-const POLL_MS = 4000;
 
 type GameStatus = 0 | 1 | 2 | 3;
 
+const STATUS_LABELS = ['Waiting', 'Ships Placed', 'In Progress', 'Finished'] as const;
+
 interface SpectatorState {
-  player1:       string;
-  player2:       string;
-  status:        GameStatus;
-  currentTurn:   string;
-  board1:        number[][];
-  board2:        number[][];
-  lastAttackRow: number;
-  lastAttackCol: number;
-  lastHit:       boolean;
-  winner:        string;
+  player1: string;
+  player2: string;
+  status: GameStatus;
+  winner: string;
+  board1: number[][];
+  board2: number[][];
+  currentTurn: string;
 }
 
-const STATUS_LABELS: Record<GameStatus, string> = {
-  0: 'Waiting',
-  1: 'Ship Placement',
-  2: 'Active ⚔',
-  3: 'Finished 🏆',
-};
-
-export default function SpectatorPage() {
-  const { id }             = useParams<{ id: string }>();
-  const { network }        = useGetNetworkConfig();
-  const { play }           = useSound();
-  const [state, setState]  = useState<SpectatorState | null>(null);
+export const SpectatorPage: React.FC = () => {
+  const { gameId } = useParams<{ gameId: string }>();
+  const [state, setState] = useState<SpectatorState | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError]  = useState<string | null>(null);
-  const prevStatusRef      = useRef<number>(-1);
-  const prevTurnRef        = useRef<string>('');
+  const [pollActive, setPollActive] = useState(true);
 
   const fetchState = useCallback(async () => {
-    if (!id) return;
+    if (!gameId) return;
     try {
-      const provider = new ProxyNetworkProvider(network.apiAddress, { timeout: 8_000 });
-      const contract = new SmartContract({ address: new Address(BATTLESHIP_CONTRACT_ADDRESS) });
-      const query    = contract.createQuery({
-        func: new ContractFunction('getGameState'),
-        args: [],
+      const raw = await battleshipService.getGameState(parseInt(gameId, 10));
+      setState({
+        player1: raw.player1 ?? '',
+        player2: raw.player2 ?? '',
+        status: (raw.status ?? 0) as GameStatus,
+        winner: raw.winner ?? '',
+        board1: raw.board1 ?? Array(10).fill(Array(10).fill(0)),
+        board2: raw.board2 ?? Array(10).fill(Array(10).fill(0)),
+        currentTurn: raw.currentTurn ?? '',
       });
-      const res = await provider.queryContract(query);
-
-      const raw = res.returnData[0];
-      if (!raw) { setError('Game not found'); return; }
-
-      // Stub — replace with real ABI codec after deploy
-      const parsed: SpectatorState = {
-        player1: 'erd1...', player2: 'erd1...', status: 2,
-        currentTurn: 'erd1...', board1: [], board2: [],
-        lastAttackRow: -1, lastAttackCol: -1, lastHit: false, winner: '',
-      };
-
-      if (prevStatusRef.current !== -1 && prevStatusRef.current !== parsed.status) {
-        if (parsed.status === 3) play(parsed.winner ? 'victory' : 'defeat');
-      }
-      prevStatusRef.current = parsed.status;
-
-      if (prevTurnRef.current !== '' && prevTurnRef.current !== parsed.currentTurn) {
-        play(parsed.lastHit ? 'explosion' : 'splash');
-      }
-      prevTurnRef.current = parsed.currentTurn;
-
-      setState(parsed);
+      if ((raw.status ?? 0) === 3) setPollActive(false);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to fetch game state');
+      setError(e instanceof Error ? e.message : 'Failed to load game state');
+      setPollActive(false);
     } finally {
       setLoading(false);
     }
-  }, [id, network.apiAddress, play]);
+  }, [gameId]);
 
   useEffect(() => {
     fetchState();
-    const interval = setInterval(fetchState, POLL_MS);
-    return () => clearInterval(interval);
   }, [fetchState]);
 
+  useEffect(() => {
+    if (!pollActive) return;
+    const id = setInterval(fetchState, 5000);
+    return () => clearInterval(id);
+  }, [pollActive, fetchState]);
+
+  const shortAddr = (addr: string) =>
+    addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : '—';
+
+  if (loading) return <div className="spectator-loading">Loading game #{gameId}…</div>;
+  if (error) return <div className="spectator-error">⚠️ {error}</div>;
+  if (!state) return null;
+
+  const statusLabel = STATUS_LABELS[state.status] ?? 'Unknown';
+
   return (
-    <main className="spectator-page">
-      <header className="spectator-header">
-        <h1>👁 Spectating Game #{id}</h1>
-        {state && (
-          <span className={`spectator-status spectator-status--${state.status}`}>
-            {STATUS_LABELS[state.status]}
-          </span>
+    <div className="spectator-page">
+      <h1 className="spec-title">👁️ Spectating — Game #{gameId}</h1>
+
+      <div className="spec-meta">
+        <span className={`spec-status status-${state.status}`}>{statusLabel}</span>
+        <span className="spec-players">
+          {shortAddr(state.player1)} <em>vs</em> {shortAddr(state.player2)}
+        </span>
+        {state.status === 2 && state.currentTurn && (
+          <span className="spec-turn">Turn: {shortAddr(state.currentTurn)}</span>
         )}
-      </header>
+      </div>
 
-      {loading && !state && <p className="spectator-loading">Connecting to game feed…</p>}
-      {error   && <p className="spectator-error" role="alert">⚠ {error}</p>}
-
-      {state && (
-        <div className="spectator-boards">
-          <section className="spectator-player">
-            <h2>
-              Player 1
-              {state.currentTurn === state.player1 && (
-                <span aria-label="Current turn"> 🎯</span>
-              )}
-            </h2>
-            <GameBoard
-              board={state.board1}
-              isOwnBoard
-              disabled
-              onCellClick={() => {}}
-            />
-          </section>
-          <section className="spectator-player">
-            <h2>
-              Player 2
-              {state.currentTurn === state.player2 && (
-                <span aria-label="Current turn"> 🎯</span>
-              )}
-            </h2>
-            <GameBoard
-              board={state.board2}
-              isOwnBoard={false}
-              disabled
-              onCellClick={() => {}}
-            />
-          </section>
+      {state.status === 3 && state.winner && (
+        <div className="spec-winner-banner">
+          🏆 Winner: <strong>{shortAddr(state.winner)}</strong>
         </div>
       )}
 
-      {state?.status === 3 && state.winner && (
-        <div className="spectator-winner">
-          <h2>🏆 Winner: <span title={state.winner}>{state.winner.slice(0, 8)}…</span></h2>
+      <div className="spec-boards">
+        <div className="spec-board-wrap">
+          <h3>{shortAddr(state.player1)}</h3>
+          <GameBoard
+            board={state.board1}
+            isMyBoard
+            onCellClick={() => {}}
+            disabled
+          />
         </div>
-      )}
+        <div className="spec-board-wrap">
+          <h3>{shortAddr(state.player2)}</h3>
+          <GameBoard
+            board={state.board2}
+            isMyBoard={false}
+            onCellClick={() => {}}
+            disabled
+          />
+        </div>
+      </div>
 
-      <p className="spectator-poll">Auto-refresh every {POLL_MS / 1000}s</p>
-    </main>
+      {pollActive && (
+        <p className="spec-poll-notice">🔄 Auto-refreshing every 5s…</p>
+      )}
+    </div>
   );
-}
+};
+
+export default SpectatorPage;
