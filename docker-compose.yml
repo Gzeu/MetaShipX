@@ -1,27 +1,75 @@
 version: '3.9'
 
 services:
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: metashipx
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: metashipx
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U metashipx']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend (NestJS) ───────────────────────────────────────────────────────
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - '3001:3001'
-    env_file: ./backend/.env
     restart: unless-stopped
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3001/api/health']
-      interval: 30s
-      timeout: 5s
-      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      DATABASE_URL: postgresql://metashipx:secret@postgres:5432/metashipx
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev_secret_change_me}
+      FRONTEND_URL: http://localhost:5173
+    ports:
+      - '4000:4000'
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
 
+  # ── Frontend (Vite dev server) ─────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - '5173:80'
-    env_file: ./frontend/.env.local
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
     depends_on:
       - backend
-    restart: unless-stopped
+    environment:
+      VITE_ENV: devnet
+      VITE_WS_URL: ws://localhost:4000
+      VITE_WEBHOOK_URL: http://localhost:4000
+    ports:
+      - '5173:5173'
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+  # ── mx-notifier (MultiversX transaction notifier) ──────────────────────────
+  # Uncomment after running: docker pull multiversx/mx-chain-notifier-go
+  # notifier:
+  #   image: multiversx/mx-chain-notifier-go:latest
+  #   restart: unless-stopped
+  #   environment:
+  #     NOTIFIER_API_TYPE: rabbit-api
+  #     NOTIFIER_ADDRESSES: ${BATTLESHIP_CONTRACT},${NFT_CONTRACT},${STAKING_CONTRACT}
+  #     NOTIFIER_WEBHOOK_URL: http://backend:4000/webhook/mx-transactions
+  #     NOTIFIER_SECRET: ${WEBHOOK_SECRET:-dev_secret_change_me}
+  #   ports:
+  #     - '8080:8080'
+
+volumes:
+  pgdata:

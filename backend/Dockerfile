@@ -7,8 +7,9 @@ RUN npm run build
 
 FROM node:20-alpine
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --omit=dev
+ENV NODE_ENV=production
 COPY --from=builder /app/dist ./dist
-EXPOSE 3001
-CMD ["node", "dist/index.js"]
+COPY --from=builder /app/node_modules ./node_modules
+COPY package*.json ./
+EXPOSE 4000
+CMD ["node", "dist/main"]

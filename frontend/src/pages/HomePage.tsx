@@ -1,2 +1,2 @@
-// Re-export the existing Home.tsx so App.tsx lazy import works consistently
+// Redirect stub — real implementation is in pages/Home.tsx
 export { default } from './Home';

@@ -1,3 +1,2 @@
-// Canonical page moved to pages/GamePage/GamePage.tsx
-// This file exists only to satisfy any stale imports.
+// Redirect stub — real implementation is in pages/GamePage/GamePage.tsx
 export { GamePage as default } from './GamePage/GamePage';

@@ -1,2 +1,2 @@
-// Canonical page moved to pages/StakingPage/StakingPage.tsx
-export { default } from './StakingPage/StakingPage';
+// Redirect stub — real implementation is in pages/StakingPage.tsx
+export { StakingPage as default } from './StakingPage';

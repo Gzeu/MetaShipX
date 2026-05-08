@@ -1,82 +1,98 @@
-/**
- * MetaShipX — Board & Ship Utilities
- */
+// ─── Board utilities ────────────────────────────────────────────────────────
 
 export const BOARD_SIZE = 10;
-export const SHIP_LENGTHS: Record<string, number> = {
-  Destroyer: 2,
-  Submarine: 3,
-  Cruiser: 3,
-  Battleship: 4,
-  Carrier: 5,
-};
 
 export type CellState = 'empty' | 'ship' | 'hit' | 'miss' | 'sunk';
 
-export interface PlacedShip {
-  type: string;
-  x: number;
-  y: number;
-  length: number;
-  isVertical: boolean;
-  cells: number[];
+export interface Cell {
+  state: CellState;
+  shipId?: string;
 }
 
-/**
- * Encode (x, y) cell coordinate to flat index.
- */
-export function encodeCell(x: number, y: number): number {
-  return x * BOARD_SIZE + y;
+export type Board = Cell[][];
+
+export const EMPTY_BOARD: Board = Array.from({ length: BOARD_SIZE }, () =>
+  Array.from({ length: BOARD_SIZE }, () => ({ state: 'empty' as CellState }))
+);
+
+export function createBoard(): Board {
+  return Array.from({ length: BOARD_SIZE }, () =>
+    Array.from({ length: BOARD_SIZE }, () => ({ state: 'empty' as CellState }))
+  );
 }
 
-/**
- * Decode flat cell index to (x, y) coordinate.
- */
-export function decodeCell(cell: number): [number, number] {
-  return [Math.floor(cell / BOARD_SIZE), cell % BOARD_SIZE];
+export const COLS = ['A','B','C','D','E','F','G','H','I','J'];
+export const ROWS = [1,2,3,4,5,6,7,8,9,10];
+
+export function cellLabel(row: number, col: number): string {
+  return `${COLS[col]}${ROWS[row]}`;
 }
 
-/**
- * Get all cell indices occupied by a ship.
- */
-export function getShipCells(ship: Omit<PlacedShip, 'cells'>): number[] {
-  const cells: number[] = [];
-  for (let step = 0; step < ship.length; step++) {
-    const cx = ship.isVertical ? ship.x + step : ship.x;
-    const cy = ship.isVertical ? ship.y : ship.y + step;
-    cells.push(encodeCell(cx, cy));
-  }
-  return cells;
+export interface Ship {
+  id: string;
+  type: ShipType;
+  size: number;
+  positions: [number, number][];
+  orientation: 'H' | 'V';
+  sunk?: boolean;
 }
 
-/**
- * Check if a ship placement is valid (in bounds, no overlaps).
- */
-export function isValidPlacement(
-  ship: Omit<PlacedShip, 'cells'>,
-  existingCells: Set<number>
+export type ShipType = 'Destroyer' | 'Submarine' | 'Cruiser' | 'Battleship' | 'Carrier';
+
+export const SHIP_SIZES: Record<ShipType, number> = {
+  Destroyer:  2,
+  Submarine:  3,
+  Cruiser:    3,
+  Battleship: 4,
+  Carrier:    5,
+};
+
+export const SHIP_LIST: ShipType[] = [
+  'Carrier', 'Battleship', 'Cruiser', 'Submarine', 'Destroyer',
+];
+
+export function canPlace(
+  board: Board,
+  row: number,
+  col: number,
+  size: number,
+  orientation: 'H' | 'V'
 ): boolean {
-  const cells = getShipCells(ship);
-  for (const cell of cells) {
-    const [x, y] = decodeCell(cell);
-    if (x >= BOARD_SIZE || y >= BOARD_SIZE || x < 0 || y < 0) return false;
-    if (existingCells.has(cell)) return false;
+  for (let i = 0; i < size; i++) {
+    const r = orientation === 'V' ? row + i : row;
+    const c = orientation === 'H' ? col + i : col;
+    if (r >= BOARD_SIZE || c >= BOARD_SIZE) return false;
+    if (board[r][c].state !== 'empty') return false;
   }
   return true;
 }
 
-/**
- * Build an empty 10×10 board state.
- */
-export function emptyBoard(): CellState[][] {
-  return Array.from({ length: BOARD_SIZE }, () =>
-    Array(BOARD_SIZE).fill('empty') as CellState[]
-  );
+export function placeShipOnBoard(
+  board: Board,
+  ship: Ship
+): Board {
+  const next = board.map(r => r.map(c => ({ ...c })));
+  for (const [r, c] of ship.positions) {
+    next[r][c] = { state: 'ship', shipId: ship.id };
+  }
+  return next;
 }
 
-/**
- * Column label (0→'A', 1→'B', ...)
- */
-export function colLabel(col: number): string {
-  return String.fromCharCode(65 + col);
+export function applyAttack(
+  board: Board,
+  row: number,
+  col: number,
+  result: 'hit' | 'miss' | 'sunk'
+): Board {
+  const next = board.map(r => r.map(c => ({ ...c })));
+  next[row][col].state = result === 'miss' ? 'miss' : result === 'sunk' ? 'sunk' : 'hit';
+  return next;
+}
+
+export function serializePositions(ships: Ship[]): string {
+  // Encodes all ship positions as hex string for on-chain submission
+  // Format: each cell as 1 byte (row << 4 | col), ships separated
+  return ships
+    .flatMap(s => s.positions.map(([r, c]) => ((r << 4) | c).toString(16).padStart(2, '0')))
+    .join('');
 }
