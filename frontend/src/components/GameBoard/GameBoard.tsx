@@ -1,89 +1,80 @@
-import React, { useCallback } from 'react';
-import type { CellState } from '../../types/game.types';
+import React, { useState } from 'react';
 import './GameBoard.css';
 
-interface GameBoardProps {
-  /** 10×10 flat grid of cell states — row-major order */
-  cells: CellState[][];
-  /** Whether this board accepts click-to-attack */
-  isInteractive?: boolean;
-  /** Hide ships (opponent board) */
-  showShips?: boolean;
-  /** Disable all clicks (e.g. not your turn, waiting) */
-  disabled?: boolean;
-  /** Called with (row, col) on valid attack click */
-  onCellClick?: (row: number, col: number) => void;
-  /** Optional label rendered above the board */
-  label?: string;
+export type CellState = 'empty' | 'ship' | 'hit' | 'miss' | 'sunk';
+
+export interface Cell {
+  row: number;
+  col: number;
+  state: CellState;
 }
 
-const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-const ROWS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+interface Props {
+  cells: Cell[][];
+  interactive: boolean;
+  onCellClick: (row: number, col: number) => void;
+  showShips?: boolean;
+}
 
-export const GameBoard: React.FC<GameBoardProps> = ({
-  cells,
-  isInteractive = false,
-  showShips = true,
-  disabled = false,
-  onCellClick,
-  label,
-}) => {
-  // Ensure board is always 10×10 even if data is missing
-  const board: CellState[][] = Array.from({ length: 10 }, (_, r) =>
-    Array.from({ length: 10 }, (_, c) => cells?.[r]?.[c] ?? 'empty')
+const COL_LABELS = ['A','B','C','D','E','F','G','H','I','J'];
+
+export const GameBoard: React.FC<Props> = ({ cells, interactive, onCellClick, showShips = true }) => {
+  const [hovered, setHovered] = useState<string | null>(null);
+
+  // Build a 10x10 grid if cells is flat or empty
+  const grid: Cell[][] = Array.from({ length: 10 }, (_, r) =>
+    Array.from({ length: 10 }, (_, c) => {
+      const found = cells.flat?.().find(cell => cell.row === r && cell.col === c);
+      return found ?? { row: r, col: c, state: 'empty' as CellState };
+    })
   );
 
-  const handleClick = useCallback(
-    (row: number, col: number) => {
-      if (!isInteractive || disabled) return;
-      const cell = board[row][col];
-      if (cell === 'hit' || cell === 'miss' || cell === 'sunk') return;
-      onCellClick?.(row, col);
-    },
-    [board, isInteractive, disabled, onCellClick]
-  );
+  function cellClass(cell: Cell): string {
+    const base = 'gb__cell';
+    const interactiveClass = interactive && cell.state === 'empty' ? ' gb__cell--interactive' : '';
+    const hoverClass = interactive && hovered === `${cell.row}-${cell.col}` ? ' gb__cell--hovered' : '';
+    switch (cell.state) {
+      case 'ship': return base + (showShips ? ' gb__cell--ship' : '') + hoverClass;
+      case 'hit':  return base + ' gb__cell--hit' + ' gb__cell--animated';
+      case 'miss': return base + ' gb__cell--miss' + ' gb__cell--animated';
+      case 'sunk': return base + ' gb__cell--sunk' + ' gb__cell--animated';
+      default:     return base + interactiveClass + hoverClass;
+    }
+  }
+
+  function cellContent(cell: Cell): string {
+    switch (cell.state) {
+      case 'hit':  return '💥';
+      case 'miss': return '〇';
+      case 'sunk': return '☠️';
+      default:     return '';
+    }
+  }
 
   return (
-    <div className="gameboard-wrapper">
-      {label && <p className="gameboard-label">{label}</p>}
-      <div className="gameboard">
-        {/* Column headers */}
-        <div className="gameboard-col-headers">
-          <div className="gameboard-corner" />
-          {COLS.map((c) => (
-            <div key={c} className="gameboard-header">{c}</div>
-          ))}
-        </div>
+    <div className="gb">
+      {/* Column headers */}
+      <div className="gb__grid">
+        <div className="gb__corner" />
+        {COL_LABELS.map(l => (
+          <div key={l} className="gb__col-label">{l}</div>
+        ))}
 
-        {/* Rows */}
-        {board.map((row, rowIdx) => (
-          <div key={rowIdx} className="gameboard-row">
-            <div className="gameboard-header gameboard-row-header">{ROWS[rowIdx]}</div>
-            {row.map((cell, colIdx) => {
-              const displayCell = (!showShips && cell === 'ship') ? 'empty' : cell;
-              const isTargetable = isInteractive && !disabled &&
-                displayCell !== 'hit' && displayCell !== 'miss' && displayCell !== 'sunk';
-              return (
-                <button
-                  key={colIdx}
-                  className={[
-                    'gameboard-cell',
-                    `gameboard-cell--${displayCell}`,
-                    isTargetable ? 'gameboard-cell--targetable' : '',
-                  ].join(' ').trim()}
-                  onClick={() => handleClick(rowIdx, colIdx)}
-                  disabled={!isInteractive || disabled ||
-                    cell === 'hit' || cell === 'miss' || cell === 'sunk'}
-                  aria-label={`${COLS[colIdx]}${ROWS[rowIdx]}: ${displayCell}`}
-                >
-                  {displayCell === 'hit'  && <span aria-hidden>💥</span>}
-                  {displayCell === 'miss' && <span aria-hidden>•</span>}
-                  {displayCell === 'sunk' && <span aria-hidden>💀</span>}
-                  {displayCell === 'ship' && showShips && <span aria-hidden>🚢</span>}
-                </button>
-              );
-            })}
-          </div>
+        {grid.map((row, ri) => (
+          <React.Fragment key={ri}>
+            <div className="gb__row-label">{ri + 1}</div>
+            {row.map(cell => (
+              <div
+                key={`${cell.row}-${cell.col}`}
+                className={cellClass(cell)}
+                onMouseEnter={() => interactive && setHovered(`${cell.row}-${cell.col}`)}
+                onMouseLeave={() => setHovered(null)}
+                onClick={() => interactive && cell.state === 'empty' && onCellClick(cell.row, cell.col)}
+              >
+                <span className="gb__cell-content">{cellContent(cell)}</span>
+              </div>
+            ))}
+          </React.Fragment>
         ))}
       </div>
     </div>

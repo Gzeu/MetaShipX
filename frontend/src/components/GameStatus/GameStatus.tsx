@@ -1,68 +1,76 @@
 import React from 'react';
-import type { GameStateView } from '../../types/game.types';
-import './game-status.css';
+import './GameStatus.css';
 
 interface Props {
-  gameState: GameStateView;
-  address: string;
-  isMyTurn: boolean;
   phase: string;
+  isMyTurn: boolean;
+  isFinished: boolean;
+  didWin: boolean;
+  playerA: string;
+  playerB?: string | null;
+  myAddress: string;
 }
 
-const SHIP_NAMES = ['Carrier', 'Battleship', 'Cruiser', 'Submarine', 'Destroyer'];
-const SHIP_LENGTHS = [5, 4, 3, 3, 2];
-const SHIP_EMOJI  = ['🛳', '⚔️', '🚢', '🤿', '⚡'];
+function shortAddr(a: string) {
+  return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '—';
+}
 
-export const GameStatus: React.FC<Props> = ({ gameState, address, isMyTurn, phase }) => {
-  const myShipsAlive  = gameState.myShipsAlive  ?? SHIP_LENGTHS.length;
-  const oppShipsAlive = gameState.oppShipsAlive ?? SHIP_LENGTHS.length;
+const PHASE_META: Record<string, { label: string; color: string; icon: string }> = {
+  Waiting:       { label: 'Waiting for opponent',  color: 'var(--gs-yellow)', icon: '⏳' },
+  PlacingShips:  { label: 'Place your ships',       color: 'var(--gs-blue)',   icon: '🚢' },
+  PlayerATurn:   { label: 'Player A attacking',     color: 'var(--gs-green)',  icon: '🎯' },
+  PlayerBTurn:   { label: 'Player B attacking',     color: 'var(--gs-green)',  icon: '🎯' },
+  Finished:      { label: 'Game over',              color: 'var(--gs-gray)',   icon: '🏁' },
+  Loading:       { label: 'Loading…',               color: 'var(--gs-gray)',   icon: '⏳' },
+};
+
+export const GameStatus: React.FC<Props> = ({
+  phase, isMyTurn, isFinished, didWin, playerA, playerB, myAddress,
+}) => {
+  const meta = PHASE_META[phase] ?? PHASE_META.Loading;
 
   return (
-    <div className="game-status">
-      {/* Turn indicator */}
-      <div className={`gs-turn ${isMyTurn ? 'gs-turn--mine' : 'gs-turn--theirs'}`}>
-        {phase === 'Finished' ? '🏁 Joc terminat' :
-         isMyTurn ? '⚔️ Rândul tău' : '🕐 Rândul lor'}
+    <div className="gs">
+      <div className="gs__phase" style={{ '--gs-accent': meta.color } as React.CSSProperties}>
+        <span className="gs__phase-icon">{meta.icon}</span>
+        <span className="gs__phase-label">{meta.label}</span>
+        {!isFinished && (
+          <span className={`gs__turn-badge ${
+            isMyTurn ? 'gs__turn-badge--mine' : 'gs__turn-badge--theirs'
+          }`}>
+            {isMyTurn ? 'YOUR TURN' : 'WAITING'}
+          </span>
+        )}
+        {isFinished && (
+          <span className={`gs__turn-badge ${
+            didWin ? 'gs__turn-badge--win' : 'gs__turn-badge--loss'
+          }`}>
+            {didWin ? '🏆 WIN' : '💀 LOSS'}
+          </span>
+        )}
       </div>
 
-      {/* Score */}
-      <div className="gs-score">
-        <div className="gs-score__block">
-          <span className="gs-score__value">{myShipsAlive}</span>
-          <span className="gs-score__label">Nave tale vii</span>
+      <div className="gs__players">
+        <div className={`gs__player ${
+          playerA?.toLowerCase() === myAddress?.toLowerCase() ? 'gs__player--me' : ''
+        }`}>
+          <span className="gs__player-label">Player A</span>
+          <span className="gs__player-addr">{shortAddr(playerA)}</span>
+          {(phase === 'PlayerATurn') && <span className="gs__player-dot" />}
         </div>
-        <div className="gs-score__divider">VS</div>
-        <div className="gs-score__block">
-          <span className="gs-score__value">{oppShipsAlive}</span>
-          <span className="gs-score__label">Nave adv. vii</span>
+
+        <span className="gs__vs">⚔</span>
+
+        <div className={`gs__player ${
+          playerB && playerB?.toLowerCase() === myAddress?.toLowerCase() ? 'gs__player--me' : ''
+        }`}>
+          <span className="gs__player-label">Player B</span>
+          <span className="gs__player-addr">{playerB ? shortAddr(playerB) : '—'}</span>
+          {(phase === 'PlayerBTurn') && <span className="gs__player-dot" />}
         </div>
       </div>
-
-      {/* Ship grid */}
-      <div className="gs-ships">
-        <div className="gs-ships__section">
-          <h4>Flotă Ta</h4>
-          {SHIP_NAMES.map((name, i) => (
-            <div key={i} className="gs-ship-row">
-              <span>{SHIP_EMOJI[i]}</span>
-              <span className="gs-ship-name">{name}</span>
-              <div className="gs-ship-dots">
-                {Array.from({ length: SHIP_LENGTHS[i] }, (_, j) => (
-                  <span key={j} className="gs-dot gs-dot--alive" />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Bet */}
-      {gameState.bet && gameState.bet !== '0' && (
-        <div className="gs-bet">
-          💰 {(Number(gameState.bet) / 1e18).toFixed(3)} EGLD
-          <span className="gs-bet__label">Pariu total</span>
-        </div>
-      )}
     </div>
   );
 };
+
+export default GameStatus;

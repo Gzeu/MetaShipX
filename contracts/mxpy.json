@@ -1,0 +1,42 @@
+{
+  "configurations": {
+    "default": {
+      "proxy": "https://devnet-gateway.multiversx.com",
+      "chainID": "D"
+    }
+  },
+  "deployments": {
+    "battleship": {
+      "contract": "contracts/battleship",
+      "bytecode": "contracts/battleship/output/battleship.wasm",
+      "arguments": [],
+      "gas-limit": 60000000,
+      "value": 0,
+      "metadata-payable": true
+    },
+    "nft": {
+      "contract": "contracts/nft",
+      "bytecode": "contracts/nft/output/nft.wasm",
+      "arguments": [],
+      "gas-limit": 60000000,
+      "value": 0,
+      "metadata-payable": true
+    },
+    "staking": {
+      "contract": "contracts/staking",
+      "bytecode": "contracts/staking/output/staking.wasm",
+      "arguments": [],
+      "gas-limit": 60000000,
+      "value": 0,
+      "metadata-payable": true
+    },
+    "tournament": {
+      "contract": "contracts/tournament",
+      "bytecode": "contracts/tournament/output/tournament.wasm",
+      "arguments": [],
+      "gas-limit": 60000000,
+      "value": 0,
+      "metadata-payable": true
+    }
+  }
+}

@@ -1,224 +1,250 @@
-/**
- * PlacementBoard — interactive 10×10 grid for placing ships before battle.
- *
- * Ships (5 total, fixed lengths): Carrier(5), Battleship(4), Cruiser(3),
- * Submarine(3), Destroyer(2). User clicks a cell, selects orientation,
- * and the ship is placed if valid. Drag-to-rotate is supported via
- * right-click / R key.
- */
-import React, { useState, useCallback, useEffect } from 'react';
-import type { ShipPlacement } from '../../types/game.types';
-import './placement-board.css';
+import React, { useState, useCallback } from 'react';
+import './PlacementBoard.css';
 
-const SHIPS = [
-  { id: 0, name: 'Carrier',     length: 5, emoji: '🛳' },
-  { id: 1, name: 'Battleship',  length: 4, emoji: '⚔️' },
-  { id: 2, name: 'Cruiser',     length: 3, emoji: '🚢' },
-  { id: 3, name: 'Submarine',   length: 3, emoji: '🤿' },
-  { id: 4, name: 'Destroyer',   length: 2, emoji: '⚡' },
-] as const;
-
-const COLS = ['A','B','C','D','E','F','G','H','I','J'];
-const SIZE = 10;
-
-interface Props {
-  onPlacementsChange: (placements: ShipPlacement[]) => void;
-  disabled?: boolean;
+// ── Ship definitions ───────────────────────────────────────────────────────
+export interface ShipDef {
+  id: string;
+  name: string;
+  size: number;
+  emoji: string;
+  color: string;
 }
 
-type Board = (number | null)[][]; // null = empty, number = ship id
+const SHIPS: ShipDef[] = [
+  { id: 'carrier',    name: 'Carrier',    size: 5, emoji: '✈️', color: '#6366f1' },
+  { id: 'battleship', name: 'Battleship', size: 4, emoji: '🛳️', color: '#8b5cf6' },
+  { id: 'cruiser',    name: 'Cruiser',    size: 3, emoji: '⚓',  color: '#3b82f6' },
+  { id: 'submarine',  name: 'Submarine',  size: 3, emoji: '🤿',  color: '#06b6d4' },
+  { id: 'destroyer',  name: 'Destroyer',  size: 2, emoji: '🚤',  color: '#10b981' },
+];
 
-function makeEmptyBoard(): Board {
-  return Array.from({ length: SIZE }, () => Array(SIZE).fill(null));
+const ROWS = 10;
+const COLS = 10;
+const COL_LABELS = ['A','B','C','D','E','F','G','H','I','J'];
+
+// ── Types ──────────────────────────────────────────────────────────────────
+type Orientation = 'H' | 'V';
+
+interface PlacedShip {
+  id: string;
+  row: number;
+  col: number;
+  orientation: Orientation;
+  size: number;
 }
 
-function canPlace(
-  board: Board,
-  shipId: number,
-  length: number,
-  x: number,
-  y: number,
-  vertical: boolean
-): boolean {
-  for (let step = 0; step < length; step++) {
-    const cx = vertical ? x + step : x;
-    const cy = vertical ? y : y + step;
-    if (cx >= SIZE || cy >= SIZE) return false;
-    if (board[cx][cy] !== null) return false;
+function shipCells(s: PlacedShip): [number, number][] {
+  const cells: [number, number][] = [];
+  for (let i = 0; i < s.size; i++) {
+    cells.push(s.orientation === 'H' ? [s.row, s.col + i] : [s.row + i, s.col]);
+  }
+  return cells;
+}
+
+function isValid(placed: PlacedShip[], ship: PlacedShip): boolean {
+  const cells = shipCells(ship);
+  // Out of bounds
+  for (const [r, c] of cells) {
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return false;
+  }
+  // Overlap check (including adjacent cells)
+  for (const existing of placed) {
+    if (existing.id === ship.id) continue;
+    const existCells = shipCells(existing);
+    for (const [r, c] of cells) {
+      for (const [er, ec] of existCells) {
+        if (Math.abs(r - er) <= 1 && Math.abs(c - ec) <= 1) return false;
+      }
+    }
   }
   return true;
 }
 
-function placeOnBoard(
-  board: Board,
-  shipId: number,
-  length: number,
-  x: number,
-  y: number,
-  vertical: boolean
-): Board {
-  const next = board.map(row => [...row]) as Board;
-  for (let step = 0; step < length; step++) {
-    const cx = vertical ? x + step : x;
-    const cy = vertical ? y : y + step;
-    next[cx][cy] = shipId;
-  }
-  return next;
+function encodePositions(placed: PlacedShip[]): number[] {
+  // Encode as flat array: [row, col, orientation(0=H,1=V), size] per ship
+  return placed.flatMap(s => [s.row, s.col, s.orientation === 'H' ? 0 : 1, s.size]);
 }
 
-function removeFromBoard(board: Board, shipId: number): Board {
-  return board.map(row => row.map(cell => (cell === shipId ? null : cell))) as Board;
+// ── Component ─────────────────────────────────────────────────────────────
+interface Props {
+  onConfirm: (positions: number[]) => void;
 }
 
-export const PlacementBoard: React.FC<Props> = ({ onPlacementsChange, disabled }) => {
-  const [board, setBoard] = useState<Board>(makeEmptyBoard());
-  const [placements, setPlacements] = useState<ShipPlacement[]>([]);
-  const [selectedShip, setSelectedShip] = useState<number>(0); // index into SHIPS
-  const [vertical, setVertical] = useState(false);
-  const [hoveredCell, setHoveredCell] = useState<[number, number] | null>(null);
+export const PlacementBoard: React.FC<Props> = ({ onConfirm }) => {
+  const [placed, setPlaced]           = useState<PlacedShip[]>([]);
+  const [selected, setSelected]       = useState<string>(SHIPS[0].id);
+  const [orientation, setOrientation] = useState<Orientation>('H');
+  const [hoverCells, setHoverCells]   = useState<[number,number][]>([]);
+  const [hoverValid, setHoverValid]   = useState(true);
 
-  // R key toggles orientation
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'r' || e.key === 'R') setVertical(v => !v);
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
+  const placedIds = new Set(placed.map(p => p.id));
+  const allPlaced = SHIPS.every(s => placedIds.has(s.id));
 
-  const placedIds = placements.map(p => p.shipIndex);
-  const currentShip = SHIPS[selectedShip];
-  const alreadyPlaced = placedIds.includes(selectedShip);
-
-  const handleCellClick = useCallback(
-    (x: number, y: number) => {
-      if (disabled || alreadyPlaced) return;
-      const { length } = currentShip;
-      if (!canPlace(board, selectedShip, length, x, y, vertical)) return;
-
-      const nextBoard = placeOnBoard(board, selectedShip, length, x, y, vertical);
-      const nextPlacements: ShipPlacement[] = [
-        ...placements,
-        { shipIndex: selectedShip, x, y, length, isVertical: vertical },
-      ];
-
-      setBoard(nextBoard);
-      setPlacements(nextPlacements);
-      onPlacementsChange(nextPlacements);
-
-      // Auto-advance to next unplaced ship
-      const nextIdx = SHIPS.findIndex(
-        (_, i) => i !== selectedShip && !nextPlacements.map(p => p.shipIndex).includes(i)
-      );
-      if (nextIdx !== -1) setSelectedShip(nextIdx);
-    },
-    [board, currentShip, disabled, alreadyPlaced, placements, selectedShip, vertical, onPlacementsChange]
-  );
-
-  const handleRemoveShip = useCallback(
-    (shipIndex: number) => {
-      const nextBoard = removeFromBoard(board, shipIndex);
-      const nextPlacements = placements.filter(p => p.shipIndex !== shipIndex);
-      setBoard(nextBoard);
-      setPlacements(nextPlacements);
-      onPlacementsChange(nextPlacements);
-      setSelectedShip(shipIndex);
-    },
-    [board, placements, onPlacementsChange]
-  );
-
-  const handleReset = () => {
-    setBoard(makeEmptyBoard());
-    setPlacements([]);
-    onPlacementsChange([]);
-    setSelectedShip(0);
-  };
-
-  // Compute preview cells
-  const previewCells = new Set<string>();
-  let previewValid = false;
-  if (hoveredCell && !alreadyPlaced) {
-    const [hx, hy] = hoveredCell;
-    previewValid = canPlace(board, selectedShip, currentShip.length, hx, hy, vertical);
-    for (let step = 0; step < currentShip.length; step++) {
-      const cx = vertical ? hx + step : hx;
-      const cy = vertical ? hy : hy + step;
-      if (cx < SIZE && cy < SIZE) previewCells.add(`${cx},${cy}`);
+  // ── Build grid state ────────────────────────────────────────────────────
+  const grid: Record<string, { color: string; label: string }> = {};
+  for (const ship of placed) {
+    const def = SHIPS.find(s => s.id === ship.id)!;
+    for (const [r, c] of shipCells(ship)) {
+      grid[`${r}-${c}`] = { color: def.color, label: def.emoji };
     }
   }
 
+  // ── Hover preview ────────────────────────────────────────────────────────
+  const onCellEnter = useCallback((row: number, col: number) => {
+    const def = SHIPS.find(s => s.id === selected);
+    if (!def || placedIds.has(selected)) { setHoverCells([]); return; }
+    const ship: PlacedShip = { id: selected, row, col, orientation, size: def.size };
+    const cells = shipCells(ship);
+    setHoverCells(cells);
+    setHoverValid(isValid(placed, ship));
+  }, [selected, orientation, placed, placedIds]);
+
+  const onCellLeave = useCallback(() => {
+    setHoverCells([]);
+  }, []);
+
+  // ── Place ship ───────────────────────────────────────────────────────────
+  const onCellClick = useCallback((row: number, col: number) => {
+    const def = SHIPS.find(s => s.id === selected);
+    if (!def) return;
+    // If already placed, remove it first (re-place)
+    const ship: PlacedShip = { id: selected, row, col, orientation, size: def.size };
+    if (!isValid(placed.filter(p => p.id !== selected), ship)) return;
+    setPlaced(prev => [
+      ...prev.filter(p => p.id !== selected),
+      ship,
+    ]);
+    // Auto-advance to next unplaced ship
+    const next = SHIPS.find(s => s.id !== selected && !placedIds.has(s.id));
+    if (next) setSelected(next.id);
+  }, [selected, orientation, placed, placedIds]);
+
+  // ── Remove ship on click in sidebar ─────────────────────────────────────
+  const removeShip = (id: string) => {
+    setPlaced(prev => prev.filter(p => p.id !== id));
+    setSelected(id);
+  };
+
+  // ── Random placement ────────────────────────────────────────────────────
+  const randomize = () => {
+    const result: PlacedShip[] = [];
+    for (const def of SHIPS) {
+      let placed2 = false;
+      for (let attempts = 0; attempts < 200 && !placed2; attempts++) {
+        const ori: Orientation = Math.random() < 0.5 ? 'H' : 'V';
+        const row = Math.floor(Math.random() * ROWS);
+        const col = Math.floor(Math.random() * COLS);
+        const ship: PlacedShip = { id: def.id, row, col, orientation: ori, size: def.size };
+        if (isValid(result, ship)) {
+          result.push(ship);
+          placed2 = true;
+        }
+      }
+    }
+    setPlaced(result);
+  };
+
+  const hoverSet = new Set(hoverCells.map(([r,c]) => `${r}-${c}`));
+
   return (
-    <div className="placement-board">
-      {/* Ship selector */}
-      <div className="ship-selector">
-        {SHIPS.map((ship, idx) => {
-          const placed = placedIds.includes(idx);
+    <div className="pb">
+      {/* Ship palette */}
+      <div className="pb__palette">
+        <div className="pb__palette-title">Your Fleet</div>
+        {SHIPS.map(ship => {
+          const isPlaced   = placedIds.has(ship.id);
+          const isSelected = selected === ship.id && !isPlaced;
           return (
-            <button
-              key={idx}
-              className={`ship-btn ${
-                idx === selectedShip ? 'ship-btn--active' : ''
-              } ${placed ? 'ship-btn--placed' : ''}`}
-              onClick={() => { if (!placed) setSelectedShip(idx); else handleRemoveShip(idx); }}
-              title={placed ? 'Click to remove' : `Select ${ship.name}`}
+            <div
+              key={ship.id}
+              className={`pb__ship-item${
+                isSelected ? ' pb__ship-item--selected' : ''
+              }${isPlaced ? ' pb__ship-item--placed' : ''}`}
+              onClick={() => isPlaced ? removeShip(ship.id) : setSelected(ship.id)}
+              title={isPlaced ? 'Click to remove' : 'Click to select'}
             >
-              <span className="ship-btn__emoji">{ship.emoji}</span>
-              <span className="ship-btn__name">{ship.name}</span>
-              <span className="ship-btn__cells">
-                {Array.from({ length: ship.length }, (_, i) => (
-                  <span key={i} className="ship-cell-dot" />
+              <span className="pb__ship-emoji">{ship.emoji}</span>
+              <span className="pb__ship-name">{ship.name}</span>
+              <span className="pb__ship-size">{ship.size} cells</span>
+              {isPlaced && <span className="pb__ship-check">✓</span>}
+              <div className="pb__ship-cells">
+                {Array.from({ length: ship.size }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="pb__ship-cell"
+                    style={{ background: isPlaced ? ship.color : undefined }}
+                  />
                 ))}
-              </span>
-              {placed && <span className="ship-btn__check">✓</span>}
-            </button>
+              </div>
+            </div>
           );
         })}
       </div>
 
-      {/* Orientation toggle */}
-      <div className="placement-controls">
-        <button
-          className={`orient-btn ${vertical ? 'orient-btn--v' : 'orient-btn--h'}`}
-          onClick={() => setVertical(v => !v)}
-        >
-          {vertical ? '↕ Vertical (R)' : '↔ Orizontal (R)'}
-        </button>
-        <button className="reset-btn" onClick={handleReset}>
-          ↺ Reset
-        </button>
-      </div>
-
       {/* Grid */}
-      <div className="pb-grid">
-        {/* Column headers */}
-        <div className="pb-grid__corner" />
-        {COLS.map(c => <div key={c} className="pb-grid__col-header">{c}</div>)}
+      <div className="pb__grid-wrap">
+        <div className="pb__controls">
+          <button
+            className={`pb__orient-btn${orientation === 'H' ? ' pb__orient-btn--active' : ''}`}
+            onClick={() => setOrientation('H')}
+          >↔ Horizontal</button>
+          <button
+            className={`pb__orient-btn${orientation === 'V' ? ' pb__orient-btn--active' : ''}`}
+            onClick={() => setOrientation('V')}
+          >↕ Vertical</button>
+          <button className="pb__random-btn" onClick={randomize}>🎲 Random</button>
+        </div>
 
-        {Array.from({ length: SIZE }, (_, row) => (
-          <React.Fragment key={row}>
-            <div className="pb-grid__row-header">{row + 1}</div>
-            {Array.from({ length: SIZE }, (_, col) => {
-              const shipId = board[row][col];
-              const isPreview = previewCells.has(`${row},${col}`);
-              let cls = 'pb-cell';
-              if (shipId !== null)  cls += ' pb-cell--ship';
-              if (isPreview)        cls += previewValid ? ' pb-cell--preview-ok' : ' pb-cell--preview-bad';
-              return (
-                <div
-                  key={col}
-                  className={cls}
-                  onClick={() => handleCellClick(row, col)}
-                  onMouseEnter={() => setHoveredCell([row, col])}
-                  onMouseLeave={() => setHoveredCell(null)}
-                  onContextMenu={e => { e.preventDefault(); setVertical(v => !v); }}
-                  role="button"
-                  aria-label={`Cell ${COLS[col]}${row + 1}`}
-                />
-              );
-            })}
-          </React.Fragment>
-        ))}
+        <div className="pb__grid">
+          {/* Column headers */}
+          <div className="pb__grid-corner" />
+          {COL_LABELS.map(l => (
+            <div key={l} className="pb__grid-col-label">{l}</div>
+          ))}
+
+          {Array.from({ length: ROWS }).map((_, row) => (
+            <React.Fragment key={row}>
+              <div className="pb__grid-row-label">{row + 1}</div>
+              {Array.from({ length: COLS }).map((_, col) => {
+                const key    = `${row}-${col}`;
+                const placed2 = grid[key];
+                const isHover = hoverSet.has(key);
+                return (
+                  <div
+                    key={key}
+                    className={`pb__cell${
+                      isHover
+                        ? hoverValid ? ' pb__cell--hover-valid' : ' pb__cell--hover-invalid'
+                        : ''
+                    }${placed2 ? ' pb__cell--placed' : ''}`}
+                    style={placed2 ? { background: placed2.color } : undefined}
+                    onMouseEnter={() => onCellEnter(row, col)}
+                    onMouseLeave={onCellLeave}
+                    onClick={() => onCellClick(row, col)}
+                    title={placed2?.label}
+                  />
+                );
+              })}
+            </React.Fragment>
+          ))}
+        </div>
+
+        <div className="pb__actions">
+          <button
+            className="pb__confirm-btn"
+            disabled={!allPlaced}
+            onClick={() => onConfirm(encodePositions(placed))}
+          >
+            {allPlaced ? '⚔️ Confirm Placement' : `Place all ships (${placed.length}/${SHIPS.length})`}
+          </button>
+          <button
+            className="pb__clear-btn"
+            onClick={() => setPlaced([])}
+          >🗑 Clear All</button>
+        </div>
       </div>
     </div>
   );
 };
+
+export default PlacementBoard;
