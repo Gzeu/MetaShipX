@@ -1,47 +1,101 @@
-import { useState, useCallback, useEffect } from 'react';
-import {
-  stake, unstake, claimRewards, getStakingInfo, StakingInfo,
-} from '../services/staking.service';
+import { useState, useEffect, useCallback } from 'react';
+import { useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
+import { stakingService } from '../services/staking.service';
 
-export interface UseStakingReturn {
-  info: StakingInfo | null;
-  loading: boolean;
-  error: string | null;
-  handleStake: (egld: string) => Promise<void>;
-  handleUnstake: (egld: string) => Promise<void>;
-  handleClaim: () => Promise<void>;
-  refresh: () => Promise<void>;
+interface StakeInfo {
+  amount: string;
+  stakedAtMs: string;
+  lastClaimedMs: string;
+  totalClaimed: string;
 }
 
-export function useStaking(address: string | null | undefined): UseStakingReturn {
-  const [info, setInfo]       = useState<StakingInfo | null>(null);
+interface UseStakingReturn {
+  stakeInfo: StakeInfo | null;
+  pendingRewards: bigint | null;
+  totalStaked: bigint | null;
+  rewardPool: bigint | null;
+  apr: number | null;
+  loading: boolean;
+  staking: boolean; // tx in-flight flag
+  stake: (amountAtto: bigint) => Promise<void>;
+  unstake: (amountAtto: bigint) => Promise<void>;
+  claimRewards: () => Promise<void>;
+  refresh: () => void;
+}
+
+export function useStaking(): UseStakingReturn {
+  const { address } = useGetAccountInfo();
+
+  const [stakeInfo, setStakeInfo] = useState<StakeInfo | null>(null);
+  const [pendingRewards, setPendingRewards] = useState<bigint | null>(null);
+  const [totalStaked, setTotalStaked] = useState<bigint | null>(null);
+  const [rewardPool, setRewardPool] = useState<bigint | null>(null);
+  const [apr, setApr] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  const [staking, setStaking] = useState(false);
+  const [tick, setTick] = useState(0);
 
-  const refresh = useCallback(async () => {
-    if (!address) return;
+  const refresh = useCallback(() => setTick(t => t + 1), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    stakingService
+      .getStakingInfo(address)
+      .then(info => {
+        if (cancelled) return;
+        setStakeInfo(info.stakeInfo);
+        setPendingRewards(info.pendingRewards);
+        setTotalStaked(info.totalStaked);
+        setRewardPool(info.rewardPool);
+        setApr(info.apr);
+      })
+      .catch(console.error)
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [address, tick]);
+
+  const stake = useCallback(async (amountAtto: bigint) => {
+    setStaking(true);
     try {
-      setInfo(await getStakingInfo(address));
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load staking info');
+      await stakingService.stake(amountAtto);
+      refresh();
+    } finally {
+      setStaking(false);
     }
-  }, [address]);
+  }, [refresh]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  const unstake = useCallback(async (amountAtto: bigint) => {
+    setStaking(true);
+    try {
+      await stakingService.unstake(amountAtto);
+      refresh();
+    } finally {
+      setStaking(false);
+    }
+  }, [refresh]);
 
-  const run = useCallback(
-    async (fn: () => Promise<unknown>) => {
-      setLoading(true); setError(null);
-      try { await fn(); await refresh(); }
-      catch (e: unknown) { setError(e instanceof Error ? e.message : 'Action failed'); }
-      finally { setLoading(false); }
-    },
-    [refresh],
-  );
+  const claimRewards = useCallback(async () => {
+    setStaking(true);
+    try {
+      await stakingService.claimRewards();
+      refresh();
+    } finally {
+      setStaking(false);
+    }
+  }, [refresh]);
 
-  const handleStake   = useCallback((egld: string) => run(() => stake(egld)),   [run]);
-  const handleUnstake = useCallback((egld: string) => run(() => unstake(egld)), [run]);
-  const handleClaim   = useCallback(() => run(() => claimRewards()),            [run]);
-
-  return { info, loading, error, handleStake, handleUnstake, handleClaim, refresh };
+  return {
+    stakeInfo,
+    pendingRewards,
+    totalStaked,
+    rewardPool,
+    apr,
+    loading,
+    staking,
+    stake,
+    unstake,
+    claimRewards,
+    refresh,
+  };
 }

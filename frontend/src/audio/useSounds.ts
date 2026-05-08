@@ -1,123 +1,51 @@
-import { useRef, useCallback } from 'react';
+import { useCallback } from 'react';
 
-// ---------------------------------------------------------------------------
-// Web Audio API — all sounds generated procedurally, zero external files
-// ---------------------------------------------------------------------------
+type OscType = OscillatorType;
 
-type AudioCtxRef = AudioContext | null;
-
-function getCtx(ref: React.MutableRefObject<AudioCtxRef>): AudioContext {
-  if (!ref.current) {
-    ref.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+function playTone(freq: number, dur: number, type: OscType = 'sine', volume = 0.3) {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = freq;
+    osc.type = type;
+    gain.gain.setValueAtTime(volume, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + dur);
+  } catch {
+    // AudioContext not available (SSR / test env)
   }
-  return ref.current;
-}
-
-// Utility: play a simple oscillator burst
-function burst(
-  ctx: AudioContext,
-  type: OscillatorType,
-  freq: number,
-  duration: number,
-  gainPeak: number = 0.4,
-  freqEnd?: number
-) {
-  const osc  = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(freq, ctx.currentTime);
-  if (freqEnd !== undefined) {
-    osc.frequency.exponentialRampToValueAtTime(freqEnd, ctx.currentTime + duration);
-  }
-  gain.gain.setValueAtTime(gainPeak, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start(ctx.currentTime);
-  osc.stop(ctx.currentTime + duration + 0.05);
-}
-
-// White noise buffer (for explosion)
-function noiseBuffer(ctx: AudioContext): AudioBuffer {
-  const frames = ctx.sampleRate * 0.5;
-  const buf = ctx.createBuffer(1, frames, ctx.sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
-  return buf;
 }
 
 export function useSounds() {
-  const ctxRef = useRef<AudioCtxRef>(null);
-
-  /** Missile launch → high-pitched sweep down */
-  const launch = useCallback(() => {
-    const ctx = getCtx(ctxRef);
-    burst(ctx, 'sine', 1200, 0.25, 0.3, 400);
-    burst(ctx, 'sawtooth', 800, 0.2, 0.15, 200);
-  }, []);
-
-  /** Water splash — miss */
-  const miss = useCallback(() => {
-    const ctx = getCtx(ctxRef);
-    // Low thud + noise burst
-    burst(ctx, 'sine', 120, 0.4, 0.35, 60);
-    const src  = ctx.createBufferSource();
-    const gain = ctx.createGain();
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 600;
-    src.buffer = noiseBuffer(ctx);
-    gain.gain.setValueAtTime(0.3, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-    src.connect(filter);
-    filter.connect(gain);
-    gain.connect(ctx.destination);
-    src.start(ctx.currentTime);
-    src.stop(ctx.currentTime + 0.5);
-  }, []);
-
-  /** Explosion — hit */
   const hit = useCallback(() => {
-    const ctx = getCtx(ctxRef);
-    // Low boom
-    burst(ctx, 'sawtooth', 80, 0.6, 0.5, 40);
-    // Crackling noise
-    const src    = ctx.createBufferSource();
-    const gain   = ctx.createGain();
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'highpass';
-    filter.frequency.value = 400;
-    src.buffer = noiseBuffer(ctx);
-    gain.gain.setValueAtTime(0.6, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-    src.connect(filter);
-    filter.connect(gain);
-    gain.connect(ctx.destination);
-    src.start(ctx.currentTime);
-    src.stop(ctx.currentTime + 0.7);
+    playTone(440, 0.12, 'square', 0.25);
   }, []);
 
-  /** Ship sunk — longer explosion + descending chord */
+  const miss = useCallback(() => {
+    playTone(180, 0.35, 'sine', 0.2);
+  }, []);
+
   const sunk = useCallback(() => {
-    const ctx = getCtx(ctxRef);
-    [200, 150, 100, 70].forEach((f, i) => {
-      setTimeout(() => burst(ctx, 'sawtooth', f, 0.8, 0.4, f * 0.4), i * 80);
-    });
+    playTone(220, 0.15, 'sawtooth', 0.3);
+    setTimeout(() => playTone(180, 0.15, 'sawtooth', 0.3), 150);
+    setTimeout(() => playTone(140, 0.5, 'sawtooth', 0.25), 300);
   }, []);
 
-  /** Your turn — sonar ping */
-  const yourTurn = useCallback(() => {
-    const ctx = getCtx(ctxRef);
-    burst(ctx, 'sine', 880, 0.15, 0.2);
-    setTimeout(() => burst(ctx, 'sine', 1100, 0.12, 0.15), 180);
-  }, []);
-
-  /** Victory fanfare */
   const win = useCallback(() => {
-    const ctx = getCtx(ctxRef);
-    const notes = [523, 659, 784, 1047];
-    notes.forEach((f, i) => setTimeout(() => burst(ctx, 'sine', f, 0.4, 0.5), i * 150));
+    playTone(523, 0.18, 'sine', 0.3); // C5
+    setTimeout(() => playTone(659, 0.18, 'sine', 0.3), 200); // E5
+    setTimeout(() => playTone(784, 0.18, 'sine', 0.3), 400); // G5
+    setTimeout(() => playTone(1047, 0.4, 'sine', 0.35), 600); // C6
   }, []);
 
-  return { launch, miss, hit, sunk, yourTurn, win };
+  const yourTurn = useCallback(() => {
+    playTone(880, 0.08, 'sine', 0.15);
+    setTimeout(() => playTone(1100, 0.12, 'sine', 0.2), 100);
+  }, []);
+
+  return { hit, miss, sunk, win, yourTurn };
 }
