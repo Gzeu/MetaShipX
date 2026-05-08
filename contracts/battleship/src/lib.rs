@@ -3,16 +3,18 @@
 multiversx_sc::imports!();
 multiversx_sc::derive_imports!();
 
-/// Maximum number of ships per player
 const MAX_SHIPS: usize = 5;
-/// Board size (10x10)
 const BOARD_SIZE: u8 = 10;
-/// Ship lengths for the 5 standard ships
 const SHIP_LENGTHS: [u8; 5] = [5, 4, 3, 3, 2];
-/// Fee percentage sent to staking reward pool on game end (1% = 100 basis pts)
 const STAKING_FEE_BPS: u64 = 100;
 
-// ── Types ───────────────────────────────────────────────────────────────────
+// ── Supernova: nonce-based timeout ───────────────────────────────────────────
+// At 600 ms/block (Supernova), 1 hour ≈ 6 000 blocks.
+// We give each player 30 minutes = 3 000 blocks to act before opponent can
+// claim the game as abandoned. This is block-time agnostic by design.
+const TURN_TIMEOUT_BLOCKS: u64 = 3_000;
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 #[derive(NestedEncode, NestedDecode, TopEncode, TopDecode, TypeAbi, PartialEq, Clone)]
 pub enum GamePhase {
@@ -22,20 +24,23 @@ pub enum GamePhase {
     Finished,
 }
 
+/// ✅ Supernova: replaced timestamp fields with block nonces.
+/// `last_action_nonce` is updated on every state-changing action.
+/// Timeout checks compare `current_nonce - last_action_nonce > TURN_TIMEOUT_BLOCKS`.
 #[derive(NestedEncode, NestedDecode, TopEncode, TopDecode, TypeAbi, Clone)]
 pub struct GameState<M: ManagedTypeApi> {
     pub creator: ManagedAddress<M>,
     pub opponent: Option<ManagedAddress<M>>,
     pub bet: BigUint<M>,
     pub phase: GamePhase,
-    /// 0 = creator's turn, 1 = opponent's turn
     pub current_turn: u8,
     pub winner: Option<ManagedAddress<M>>,
-    /// NFT nonce of winner's ship (set when winner is known)
     pub winner_ship_nonce: u64,
-    /// If non-zero, this game is part of a tournament match
     pub tournament_id: u64,
     pub tournament_match_id: u64,
+    /// ✅ Block nonce of the last state-changing action (place, attack, join).
+    /// Used for abandonment detection. Monotonically increasing — safe on Supernova.
+    pub last_action_nonce: u64,
 }
 
 #[derive(NestedEncode, NestedDecode, TopEncode, TopDecode, TypeAbi, Clone)]
@@ -62,7 +67,7 @@ pub enum AttackResult {
     GameOver,
 }
 
-// ── Contract ────────────────────────────────────────────────────────────────
+// ── Contract ─────────────────────────────────────────────────────────────────
 
 #[multiversx_sc::contract]
 pub trait Battleship {
@@ -94,19 +99,15 @@ pub trait Battleship {
     #[storage_mapper("ships_placed")]
     fn ships_placed(&self, game_id: u64, player_idx: u8) -> SingleValueMapper<bool>;
 
-    /// Address of the deployed tournament contract (optional)
     #[storage_mapper("tournament_contract")]
     fn tournament_contract(&self) -> SingleValueMapper<ManagedAddress>;
 
-    /// Address of the deployed NFT ship contract (optional)
     #[storage_mapper("nft_contract")]
     fn nft_contract(&self) -> SingleValueMapper<ManagedAddress>;
 
-    /// Address of the deployed staking contract (optional)
     #[storage_mapper("staking_contract")]
     fn staking_contract(&self) -> SingleValueMapper<ManagedAddress>;
 
-    /// Ship nonce for each player in each game (set when joining/creating)
     #[storage_mapper("player_ship_nonce")]
     fn player_ship_nonce(&self, game_id: u64, player_idx: u8) -> SingleValueMapper<u64>;
 
@@ -134,6 +135,14 @@ pub trait Battleship {
     #[event("gameOver")]
     fn game_over_event(&self, #[indexed] game_id: u64, #[indexed] winner: ManagedAddress);
 
+    #[event("gameAbandoned")]
+    fn game_abandoned_event(
+        &self,
+        #[indexed] game_id: u64,
+        #[indexed] winner: ManagedAddress,
+        blocks_elapsed: u64,
+    );
+
     #[event("tournamentResultReported")]
     fn tournament_result_reported_event(
         &self,
@@ -152,13 +161,9 @@ pub trait Battleship {
     );
 
     #[event("stakingFeeSent")]
-    fn staking_fee_sent_event(
-        &self,
-        #[indexed] game_id: u64,
-        fee_amount: BigUint,
-    );
+    fn staking_fee_sent_event(&self, #[indexed] game_id: u64, fee_amount: BigUint);
 
-    // ── Owner Config ────────────────────────────────────────────────────────
+    // ── Owner config ─────────────────────────────────────────────────────────
 
     #[only_owner]
     #[endpoint(setTournamentContract)]
@@ -166,14 +171,12 @@ pub trait Battleship {
         self.tournament_contract().set(addr);
     }
 
-    /// Set the NFT contract address for cross-contract win recording.
     #[only_owner]
     #[endpoint(setNftContract)]
     fn set_nft_contract(&self, addr: ManagedAddress) {
         self.nft_contract().set(addr);
     }
 
-    /// Set the staking contract address for automatic reward pool funding.
     #[only_owner]
     #[endpoint(setStakingContract)]
     fn set_staking_contract(&self, addr: ManagedAddress) {
@@ -182,7 +185,6 @@ pub trait Battleship {
 
     // ── Endpoints ───────────────────────────────────────────────────────────
 
-    /// Create a regular game. Pass ship_nonce to link the NFT ship used.
     #[payable("EGLD")]
     #[endpoint(createGame)]
     fn create_game(&self, ship_nonce: u64) -> u64 {
@@ -191,6 +193,8 @@ pub trait Battleship {
         let caller = self.blockchain().get_caller();
         let game_id = self.game_counter().get() + 1;
         self.game_counter().set(game_id);
+        // ✅ Supernova: record creation block nonce
+        let current_nonce = self.blockchain().get_block_nonce();
 
         let state = GameState {
             creator: caller.clone(),
@@ -202,6 +206,7 @@ pub trait Battleship {
             winner_ship_nonce: 0,
             tournament_id: 0,
             tournament_match_id: 0,
+            last_action_nonce: current_nonce,
         };
         self.game_state(game_id).set(&state);
         self.player_games(&caller).insert(game_id);
@@ -210,7 +215,6 @@ pub trait Battleship {
         game_id
     }
 
-    /// Create a tournament match game.
     #[endpoint(createTournamentGame)]
     fn create_tournament_game(
         &self,
@@ -231,6 +235,7 @@ pub trait Battleship {
 
         let game_id = self.game_counter().get() + 1;
         self.game_counter().set(game_id);
+        let current_nonce = self.blockchain().get_block_nonce();
 
         let state = GameState {
             creator: player1.clone(),
@@ -242,6 +247,7 @@ pub trait Battleship {
             winner_ship_nonce: 0,
             tournament_id,
             tournament_match_id: match_id,
+            last_action_nonce: current_nonce,
         };
         self.game_state(game_id).set(&state);
         self.player_games(&player1).insert(game_id);
@@ -252,7 +258,6 @@ pub trait Battleship {
         game_id
     }
 
-    /// Join an existing regular game.
     #[payable("EGLD")]
     #[endpoint(joinGame)]
     fn join_game(&self, game_id: u64, ship_nonce: u64) {
@@ -264,6 +269,8 @@ pub trait Battleship {
         require!(caller != state.creator, "Creator cannot join");
         require!(payment == state.bet, "Wrong bet amount");
 
+        // ✅ Update last_action_nonce on join
+        state.last_action_nonce = self.blockchain().get_block_nonce();
         state.opponent = Some(caller.clone());
         state.phase = GamePhase::PlacingShips;
         self.game_state(game_id).set(&state);
@@ -272,7 +279,6 @@ pub trait Battleship {
         self.game_joined_event(game_id, caller);
     }
 
-    /// Place ships.
     #[endpoint(placeShips)]
     fn place_ships(
         &self,
@@ -309,17 +315,18 @@ pub trait Battleship {
         }
 
         self.ships_placed(game_id, player_idx).set(true);
+        // ✅ Update last_action_nonce on ship placement
+        state.last_action_nonce = self.blockchain().get_block_nonce();
         self.ships_placed_event(game_id, caller);
 
         let other_idx = 1 - player_idx;
         if self.ships_placed(game_id, other_idx).get() {
             state.phase = GamePhase::InProgress;
             state.current_turn = 0;
-            self.game_state(game_id).set(&state);
         }
+        self.game_state(game_id).set(&state);
     }
 
-    /// Attack a cell.
     #[endpoint(attack)]
     fn attack(&self, game_id: u64, x: u8, y: u8) -> AttackResult {
         require!(x < BOARD_SIZE && y < BOARD_SIZE, "OOB");
@@ -335,6 +342,9 @@ pub trait Battleship {
         let opponent_idx = 1 - player_idx;
         require!(!self.attacked(game_id, opponent_idx).contains(&cell), "Already attacked");
         self.attacked(game_id, opponent_idx).insert(cell);
+
+        // ✅ Update last_action_nonce on every attack
+        state.last_action_nonce = self.blockchain().get_block_nonce();
 
         let ship_count = self.ships(game_id, opponent_idx).len();
         let mut hit = false;
@@ -365,19 +375,14 @@ pub trait Battleship {
         if result == AttackResult::GameOver {
             let winner_ship_nonce = self.player_ship_nonce(game_id, player_idx).get();
 
-            // Regular game: compute fee, send net prize to winner
             if state.tournament_id == 0 {
                 let total_pot = state.bet.clone() * 2u64;
                 let fee = total_pot.clone() * STAKING_FEE_BPS / 10_000u64;
                 let prize = total_pot - fee.clone();
-
                 self.send().direct_egld(&caller, &prize);
-
-                // ── Cross-contract: fund staking reward pool ────────────────
                 self.notify_staking_reward(game_id, fee);
             }
 
-            // ── Cross-contract: record win on NFT contract ──────────────────
             self.notify_nft_win(game_id, caller.clone(), winner_ship_nonce);
 
             state.phase = GamePhase::Finished;
@@ -386,7 +391,6 @@ pub trait Battleship {
             self.game_state(game_id).set(&state);
             self.game_over_event(game_id, caller.clone());
 
-            // ── Cross-contract: report to tournament SC ─────────────────────
             if state.tournament_id != 0 {
                 self.report_tournament_result(
                     game_id,
@@ -403,7 +407,41 @@ pub trait Battleship {
         result
     }
 
-    /// Creator withdraws bet when no opponent joined yet.
+    /// ✅ Supernova: claim an abandoned game by block nonce timeout.
+    /// If the active player has not moved for > TURN_TIMEOUT_BLOCKS blocks,
+    /// their opponent can call this to claim the pot as winner.
+    #[endpoint(claimAbandonedGame)]
+    fn claim_abandoned_game(&self, game_id: u64) {
+        let caller = self.blockchain().get_caller();
+        let mut state = self.game_state(game_id).get();
+        require!(state.phase == GamePhase::InProgress, "Game not in progress");
+
+        let current_nonce = self.blockchain().get_block_nonce();
+        // ✅ Safe: nonces are monotonically increasing — no same-block ambiguity
+        let blocks_elapsed = current_nonce - state.last_action_nonce;
+        require!(blocks_elapsed > TURN_TIMEOUT_BLOCKS, "Timeout not reached yet");
+
+        // The caller must be the waiting player (not the one whose turn it is)
+        let caller_idx = self.get_player_idx(&state, &caller);
+        require!(
+            caller_idx != state.current_turn,
+            "Only the waiting player can claim abandonment"
+        );
+
+        // Caller wins — award pot minus fee
+        let total_pot = state.bet.clone() * 2u64;
+        let fee = total_pot.clone() * STAKING_FEE_BPS / 10_000u64;
+        let prize = total_pot - fee.clone();
+        self.send().direct_egld(&caller, &prize);
+        self.notify_staking_reward(game_id, fee);
+
+        state.phase = GamePhase::Finished;
+        state.winner = Some(caller.clone());
+        self.game_state(game_id).set(&state);
+
+        self.game_abandoned_event(game_id, caller, blocks_elapsed);
+    }
+
     #[endpoint(withdraw)]
     fn withdraw(&self, game_id: u64) {
         let caller = self.blockchain().get_caller();
@@ -416,38 +454,30 @@ pub trait Battleship {
         self.send().direct_egld(&caller, &bet);
     }
 
-    // ── Internal: cross-contract → NFT ──────────────────────────────────────
+    // ── Internal: cross-contract ─────────────────────────────────────────────
 
     fn notify_nft_win(&self, game_id: u64, winner: ManagedAddress, ship_nonce: u64) {
         if ship_nonce == 0 { return; }
         let nft_addr = self.nft_contract().get();
         if nft_addr == ManagedAddress::zero() { return; }
-
         self.nft_proxy(nft_addr)
             .record_win(ship_nonce)
             .with_gas_limit(8_000_000)
             .transfer_execute();
-
         self.nft_win_recorded_event(game_id, winner, ship_nonce);
     }
-
-    // ── Internal: cross-contract → Staking ──────────────────────────────────
 
     fn notify_staking_reward(&self, game_id: u64, fee: BigUint) {
         if fee == BigUint::zero() { return; }
         let staking_addr = self.staking_contract().get();
         if staking_addr == ManagedAddress::zero() { return; }
-
         self.staking_proxy(staking_addr)
             .fund_reward_pool()
             .with_egld_transfer(fee.clone())
             .with_gas_limit(8_000_000)
             .transfer_execute();
-
         self.staking_fee_sent_event(game_id, fee);
     }
-
-    // ── Internal: cross-contract → Tournament ───────────────────────────────
 
     fn report_tournament_result(
         &self,
@@ -458,12 +488,10 @@ pub trait Battleship {
     ) {
         let t_addr = self.tournament_contract().get();
         if t_addr == ManagedAddress::zero() { return; }
-
         self.tournament_proxy(t_addr)
             .report_match_result(tournament_id, match_id, winner.clone())
             .with_gas_limit(10_000_000)
             .transfer_execute();
-
         self.tournament_result_reported_event(game_id, tournament_id, match_id, winner);
     }
 
@@ -490,6 +518,16 @@ pub trait Battleship {
         let mut result = MultiValueEncoded::new();
         for gid in self.player_games(&player).iter() { result.push(gid); }
         result
+    }
+
+    /// ✅ Supernova diagnostic: blocks remaining before turn timeout fires.
+    #[view(getTurnBlocksRemaining)]
+    fn get_turn_blocks_remaining(&self, game_id: u64) -> u64 {
+        let state = self.game_state(game_id).get();
+        if state.phase != GamePhase::InProgress { return 0u64; }
+        let current_nonce = self.blockchain().get_block_nonce();
+        let elapsed = current_nonce - state.last_action_nonce;
+        if elapsed >= TURN_TIMEOUT_BLOCKS { 0u64 } else { TURN_TIMEOUT_BLOCKS - elapsed }
     }
 
     #[view(getTournamentContract)]
@@ -532,7 +570,6 @@ mod nft_proxy {
     multiversx_sc::imports!();
     #[multiversx_sc::proxy]
     pub trait NftContract {
-        /// Records a win for the ship NFT with the given nonce.
         #[endpoint(recordWin)]
         fn record_win(&self, nonce: u64);
     }
@@ -542,7 +579,6 @@ mod staking_proxy {
     multiversx_sc::imports!();
     #[multiversx_sc::proxy]
     pub trait StakingContract {
-        /// Fund the reward pool with EGLD payment.
         #[payable("EGLD")]
         #[endpoint(fundRewardPool)]
         fn fund_reward_pool(&self);

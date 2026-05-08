@@ -3,24 +3,36 @@
 multiversx_sc::imports!();
 multiversx_sc::derive_imports!();
 
-/// Annual Percentage Rate denominator (10_000 = 100%)
+// ── Supernova-safe constants ─────────────────────────────────────────────────
+// Block time drops from 6 000 ms → 600 ms after Supernova.
+// All durations are stored and computed in MILLISECONDS to remain correct
+// regardless of block time. Never use SECONDS_PER_YEAR on-chain again.
 const APR_DENOMINATOR: u64 = 10_000;
-/// Default APR: 20% per year (2_000 / 10_000)
-const DEFAULT_APR: u64 = 2_000;
-/// Seconds in a year
-const SECONDS_PER_YEAR: u64 = 31_536_000;
+const DEFAULT_APR: u64 = 2_000;                    // 20 % p.a.
+const MILLIS_PER_YEAR: u64 = 31_536_000_000u64;    // 365 d × 24 h × 3600 s × 1000 ms
+/// Minimum elapsed ms before a reward calculation is attempted.
+/// Prevents division producing 0 on back-to-back blocks (600 ms cadence).
+const MIN_ELAPSED_MS: u64 = 600;
 
+// ── Storage types ────────────────────────────────────────────────────────────
+
+/// All timestamp fields are in MILLISECONDS (get_block_timestamp_millis).
 #[derive(NestedEncode, NestedDecode, TopEncode, TopDecode, TypeAbi, Clone)]
 pub struct StakeInfo {
     pub amount: u64,
-    pub staked_at: u64,
-    pub last_claimed: u64,
+    /// Millisecond timestamp of first stake.
+    pub staked_at_ms: u64,
+    /// Millisecond timestamp of last successful reward claim.
+    pub last_claimed_ms: u64,
     pub total_claimed: u64,
 }
 
+// ── Contract ─────────────────────────────────────────────────────────────────
+
 #[multiversx_sc::contract]
 pub trait BattleshipStaking {
-    // ─── Init ────────────────────────────────────────────────────────────
+
+    // ── Init ────────────────────────────────────────────────────────────────
 
     #[init]
     fn init(&self, apr_numerator: u64) {
@@ -31,7 +43,7 @@ pub trait BattleshipStaking {
         self.owner().set(self.blockchain().get_caller());
     }
 
-    // ─── Storage ─────────────────────────────────────────────────────────
+    // ── Storage ─────────────────────────────────────────────────────────────
 
     #[storage_mapper("owner")]
     fn owner(&self) -> SingleValueMapper<ManagedAddress>;
@@ -48,7 +60,7 @@ pub trait BattleshipStaking {
     #[storage_mapper("stake_info")]
     fn stake_info(&self, user: &ManagedAddress) -> SingleValueMapper<StakeInfo>;
 
-    // ─── Events ──────────────────────────────────────────────────────────
+    // ── Events ──────────────────────────────────────────────────────────────
 
     #[event("staked")]
     fn staked_event(&self, #[indexed] user: ManagedAddress, amount: BigUint);
@@ -57,14 +69,20 @@ pub trait BattleshipStaking {
     fn unstaked_event(&self, #[indexed] user: ManagedAddress, amount: BigUint);
 
     #[event("rewardClaimed")]
-    fn reward_claimed_event(&self, #[indexed] user: ManagedAddress, reward: BigUint);
+    fn reward_claimed_event(
+        &self,
+        #[indexed] user: ManagedAddress,
+        reward: BigUint,
+        elapsed_ms: u64,
+    );
 
     #[event("poolFunded")]
     fn pool_funded_event(&self, #[indexed] funder: ManagedAddress, amount: BigUint);
 
-    // ─── Endpoints ───────────────────────────────────────────────────────
+    // ── Endpoints ───────────────────────────────────────────────────────────
 
-    /// Fund the reward pool. Anyone can fund it, typically the game contract after a match.
+    /// Fund the reward pool with EGLD.
+    /// Typically called by the battleship contract after each finished game.
     #[payable("EGLD")]
     #[endpoint(fundRewardPool)]
     fn fund_reward_pool(&self) {
@@ -75,7 +93,7 @@ pub trait BattleshipStaking {
         self.pool_funded_event(self.blockchain().get_caller(), payment);
     }
 
-    /// Stake EGLD to earn rewards over time.
+    /// Stake EGLD. Timestamps stored in milliseconds (Supernova-safe).
     #[payable("EGLD")]
     #[endpoint(stake)]
     fn stake(&self) {
@@ -83,18 +101,18 @@ pub trait BattleshipStaking {
         require!(payment > 0u64, "Must stake more than 0");
 
         let caller = self.blockchain().get_caller();
-        let now = self.blockchain().get_block_timestamp();
+        // ✅ Supernova: use millis — monotonic even at 600 ms block time
+        let now_ms = self.blockchain().get_block_timestamp_millis();
 
         if self.stake_info(&caller).is_empty() {
             let info = StakeInfo {
                 amount: payment.to_u64().unwrap_or(0),
-                staked_at: now,
-                last_claimed: now,
+                staked_at_ms: now_ms,
+                last_claimed_ms: now_ms,
                 total_claimed: 0,
             };
             self.stake_info(&caller).set(&info);
         } else {
-            // Claim pending rewards first, then add to stake
             self.do_claim_rewards(&caller);
             let mut info = self.stake_info(&caller).get();
             info.amount += payment.to_u64().unwrap_or(0);
@@ -106,13 +124,12 @@ pub trait BattleshipStaking {
         self.staked_event(caller, payment);
     }
 
-    /// Unstake EGLD. Pending rewards are claimed automatically.
+    /// Unstake EGLD. Pending rewards claimed automatically before withdrawal.
     #[endpoint(unstake)]
     fn unstake(&self, amount: BigUint) {
         let caller = self.blockchain().get_caller();
         require!(!self.stake_info(&caller).is_empty(), "Nothing staked");
 
-        // Claim pending first
         self.do_claim_rewards(&caller);
 
         let mut info = self.stake_info(&caller).get();
@@ -127,7 +144,11 @@ pub trait BattleshipStaking {
         }
 
         let total = self.total_staked().get();
-        let new_total = if total >= amount { total - amount.clone() } else { BigUint::zero() };
+        let new_total = if total >= amount {
+            total - amount.clone()
+        } else {
+            BigUint::zero()
+        };
         self.total_staked().set(new_total);
 
         self.send().direct_egld(&caller, &amount);
@@ -142,7 +163,7 @@ pub trait BattleshipStaking {
         self.do_claim_rewards(&caller);
     }
 
-    /// Owner can update the APR.
+    /// Owner: update APR (basis points, max 10 000 = 100%).
     #[only_owner]
     #[endpoint(setApr)]
     fn set_apr(&self, new_apr: u64) {
@@ -150,33 +171,49 @@ pub trait BattleshipStaking {
         self.apr().set(new_apr);
     }
 
-    // ─── Internal Helpers ────────────────────────────────────────────────
+    // ── Internal helpers ─────────────────────────────────────────────────────
 
     fn do_claim_rewards(&self, user: &ManagedAddress) {
         if self.stake_info(user).is_empty() { return; }
-        let mut info = self.stake_info(user).get();
-        let now = self.blockchain().get_block_timestamp();
-        let elapsed = now - info.last_claimed;
 
-        if elapsed == 0 || info.amount == 0 { return; }
+        let mut info = self.stake_info(user).get();
+        // ✅ Supernova: millisecond timestamps — safe at 600 ms blocks
+        let now_ms = self.blockchain().get_block_timestamp_millis();
+
+        // ✅ Anti-division-by-zero: skip if not enough time elapsed
+        if now_ms <= info.last_claimed_ms { return; }
+        let elapsed_ms = now_ms - info.last_claimed_ms;
+        if elapsed_ms < MIN_ELAPSED_MS || info.amount == 0 { return; }
 
         let apr = self.apr().get();
-        // reward = amount * APR * elapsed / (SECONDS_PER_YEAR * APR_DENOMINATOR)
-        let reward_u64 = info.amount
-            .saturating_mul(apr)
-            .saturating_mul(elapsed)
-            / SECONDS_PER_YEAR
-            / APR_DENOMINATOR;
+
+        // reward = amount * APR_bps * elapsed_ms / (MILLIS_PER_YEAR * APR_DENOMINATOR)
+        // Integer arithmetic: multiply first, then divide to preserve precision.
+        // Using u128 intermediate to avoid overflow on large stakes / long periods.
+        let reward_u128 = (info.amount as u128)
+            .saturating_mul(apr as u128)
+            .saturating_mul(elapsed_ms as u128)
+            / (MILLIS_PER_YEAR as u128)
+            / (APR_DENOMINATOR as u128);
+
+        // Safe cast back — rewards should fit in u64 for normal amounts
+        let reward_u64 = if reward_u128 > u64::MAX as u128 {
+            u64::MAX
+        } else {
+            reward_u128 as u64
+        };
 
         if reward_u64 == 0 { return; }
+
         let reward = BigUint::from(reward_u64);
-
         let pool = self.reward_pool().get();
-        let actual_reward = if pool >= reward { reward.clone() } else { pool.clone() };
 
+        // Cap reward at available pool balance
+        let actual_reward = if pool >= reward { reward } else { pool.clone() };
         if actual_reward == BigUint::zero() { return; }
 
-        info.last_claimed = now;
+        // ✅ Update last_claimed_ms BEFORE sending to prevent re-entrancy issues
+        info.last_claimed_ms = now_ms;
         info.total_claimed += actual_reward.to_u64().unwrap_or(0);
         self.stake_info(user).set(&info);
 
@@ -184,47 +221,62 @@ pub trait BattleshipStaking {
         self.reward_pool().set(new_pool);
 
         self.send().direct_egld(user, &actual_reward);
-        self.reward_claimed_event(user.clone(), actual_reward);
+        self.reward_claimed_event(user.clone(), actual_reward, elapsed_ms);
     }
 
-    // ─── Views ───────────────────────────────────────────────────────────
+    // ── Views ────────────────────────────────────────────────────────────────
 
+    /// Returns (amount, staked_at_ms, last_claimed_ms, total_claimed).
+    /// All timestamps are milliseconds since epoch.
     #[view(getStakeInfo)]
     fn get_stake_info(&self, user: ManagedAddress) -> MultiValue4<u64, u64, u64, u64> {
         if self.stake_info(&user).is_empty() {
             return MultiValue4::from((0u64, 0u64, 0u64, 0u64));
         }
         let info = self.stake_info(&user).get();
-        MultiValue4::from((info.amount, info.staked_at, info.last_claimed, info.total_claimed))
+        MultiValue4::from((
+            info.amount,
+            info.staked_at_ms,
+            info.last_claimed_ms,
+            info.total_claimed,
+        ))
     }
 
+    /// Returns pending reward in EGLD (as u64 attoEGLD equivalent).
     #[view(getPendingRewards)]
     fn get_pending_rewards(&self, user: ManagedAddress) -> BigUint {
         if self.stake_info(&user).is_empty() { return BigUint::zero(); }
         let info = self.stake_info(&user).get();
-        let now = self.blockchain().get_block_timestamp();
-        let elapsed = now - info.last_claimed;
+        let now_ms = self.blockchain().get_block_timestamp_millis();
+
+        if now_ms <= info.last_claimed_ms { return BigUint::zero(); }
+        let elapsed_ms = now_ms - info.last_claimed_ms;
+        if elapsed_ms < MIN_ELAPSED_MS || info.amount == 0 {
+            return BigUint::zero();
+        }
+
         let apr = self.apr().get();
-        let reward_u64 = info.amount
-            .saturating_mul(apr)
-            .saturating_mul(elapsed)
-            / SECONDS_PER_YEAR
-            / APR_DENOMINATOR;
-        BigUint::from(reward_u64)
+        let reward_u128 = (info.amount as u128)
+            .saturating_mul(apr as u128)
+            .saturating_mul(elapsed_ms as u128)
+            / (MILLIS_PER_YEAR as u128)
+            / (APR_DENOMINATOR as u128);
+
+        BigUint::from(reward_u128 as u64)
     }
 
     #[view(getTotalStaked)]
-    fn get_total_staked(&self) -> BigUint {
-        self.total_staked().get()
-    }
+    fn get_total_staked(&self) -> BigUint { self.total_staked().get() }
 
     #[view(getRewardPool)]
-    fn get_reward_pool(&self) -> BigUint {
-        self.reward_pool().get()
-    }
+    fn get_reward_pool(&self) -> BigUint { self.reward_pool().get() }
 
     #[view(getApr)]
-    fn get_apr(&self) -> u64 {
-        self.apr().get()
+    fn get_apr(&self) -> u64 { self.apr().get() }
+
+    /// Current block timestamp in milliseconds (diagnostic view).
+    #[view(getCurrentTimestampMs)]
+    fn get_current_timestamp_ms(&self) -> u64 {
+        self.blockchain().get_block_timestamp_millis()
     }
 }

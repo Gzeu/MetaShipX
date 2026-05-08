@@ -3,16 +3,17 @@
 multiversx_sc::imports!();
 multiversx_sc::derive_imports!();
 
-/// Ship types with different stats
 #[derive(NestedEncode, NestedDecode, TopEncode, TopDecode, TypeAbi, PartialEq, Clone, Copy)]
 pub enum ShipType {
-    Destroyer,   // length 2
-    Submarine,   // length 3
-    Cruiser,     // length 3
-    Battleship,  // length 4
-    Carrier,     // length 5
+    Destroyer,
+    Submarine,
+    Cruiser,
+    Battleship,
+    Carrier,
 }
 
+/// ✅ Supernova: minted_at_ms stores milliseconds (get_block_timestamp_millis).
+/// This makes the field meaningful even at 600 ms block cadence.
 #[derive(NestedEncode, NestedDecode, TopEncode, TopDecode, TypeAbi, Clone)]
 pub struct ShipMetadata<M: ManagedTypeApi> {
     pub ship_type: ShipType,
@@ -20,11 +21,14 @@ pub struct ShipMetadata<M: ManagedTypeApi> {
     pub wins: u32,
     pub owner: ManagedAddress<M>,
     pub name: ManagedBuffer<M>,
+    /// Millisecond timestamp when the ship was minted.
+    pub minted_at_ms: u64,
 }
 
 #[multiversx_sc::contract]
 pub trait ShipNft {
-    // ─── Init ────────────────────────────────────────────────────────────
+
+    // ── Init ────────────────────────────────────────────────────────────────
 
     #[init]
     fn init(
@@ -40,7 +44,7 @@ pub trait ShipNft {
         self.owner().set(self.blockchain().get_caller());
     }
 
-    // ─── Storage ─────────────────────────────────────────────────────────
+    // ── Storage ─────────────────────────────────────────────────────────────
 
     #[storage_mapper("collection_name")]
     fn collection_name(&self) -> SingleValueMapper<ManagedBuffer>;
@@ -66,7 +70,7 @@ pub trait ShipNft {
     #[storage_mapper("owner")]
     fn owner(&self) -> SingleValueMapper<ManagedAddress>;
 
-    // ─── Events ──────────────────────────────────────────────────────────
+    // ── Events ──────────────────────────────────────────────────────────────
 
     #[event("shipMinted")]
     fn ship_minted_event(
@@ -74,6 +78,7 @@ pub trait ShipNft {
         #[indexed] nonce: u64,
         #[indexed] owner: ManagedAddress,
         ship_type: ShipType,
+        minted_at_ms: u64,
     );
 
     #[event("shipUpgraded")]
@@ -82,10 +87,8 @@ pub trait ShipNft {
     #[event("winRecorded")]
     fn win_recorded_event(&self, #[indexed] nonce: u64, total_wins: u32);
 
-    // ─── Endpoints ───────────────────────────────────────────────────────
+    // ── Endpoints ───────────────────────────────────────────────────────────
 
-    /// Register the SFT collection. Must be called once by owner after deploy.
-    /// The callback will store the token ID.
     #[only_owner]
     #[payable("EGLD")]
     #[endpoint(registerShipCollection)]
@@ -124,7 +127,6 @@ pub trait ShipNft {
                 self.ship_token_id().set(&token_id);
             }
             ManagedAsyncCallResult::Err(_) => {
-                // Return payment on failure
                 let returned = self.call_value().egld_value().clone_value();
                 if returned > 0u64 {
                     self.send().direct_egld(&self.owner().get(), &returned);
@@ -133,7 +135,6 @@ pub trait ShipNft {
         }
     }
 
-    /// Mint a new ship NFT. Caller pays mint_price EGLD.
     #[payable("EGLD")]
     #[endpoint(mintShip)]
     fn mint_ship(&self, ship_type: ShipType, ship_name: ManagedBuffer) -> u64 {
@@ -143,6 +144,8 @@ pub trait ShipNft {
         require!(!self.ship_token_id().is_empty(), "Collection not registered yet");
 
         let caller = self.blockchain().get_caller();
+        // ✅ Supernova: store minted_at in milliseconds
+        let now_ms = self.blockchain().get_block_timestamp_millis();
         let nonce = self.token_id_counter().get() + 1;
         self.token_id_counter().set(nonce);
 
@@ -151,19 +154,19 @@ pub trait ShipNft {
             level: 1,
             wins: 0,
             owner: caller.clone(),
-            name: ship_name,
+            name: ship_name.clone(),
+            minted_at_ms: now_ms,
         };
         self.ship_metadata(nonce).set(&metadata);
         self.owner_ships(&caller).insert(nonce);
 
-        // Mint 1 SFT to caller
         let token_id = self.ship_token_id().get();
         let uris: ManagedVec<ManagedBuffer> = ManagedVec::new();
         let attributes = metadata.top_encode_to_vec_or_panic();
         self.send().esdt_nft_create(
             &token_id,
             &BigUint::from(1u64),
-            &metadata.name,
+            &ship_name,
             &BigUint::zero(),
             &ManagedBuffer::new(),
             &ManagedBuffer::from(attributes.as_slice()),
@@ -171,9 +174,8 @@ pub trait ShipNft {
         );
         self.send().direct_esdt(&caller, &token_id, nonce, &BigUint::from(1u64));
 
-        self.ship_minted_event(nonce, caller, ship_type);
+        self.ship_minted_event(nonce, caller.clone(), ship_type, now_ms);
 
-        // Refund excess
         let excess = payment - price;
         if excess > 0u64 {
             self.send().direct_egld(&caller, &excess);
@@ -181,7 +183,6 @@ pub trait ShipNft {
         nonce
     }
 
-    /// Upgrade a ship (increases level). Cost = level * mint_price.
     #[payable("EGLD")]
     #[endpoint(upgradeShip)]
     fn upgrade_ship(&self, nonce: u64) {
@@ -205,7 +206,6 @@ pub trait ShipNft {
         }
     }
 
-    /// Called by the battleship contract to record a win for a ship.
     #[endpoint(recordWin)]
     fn record_win(&self, nonce: u64) {
         require!(!self.ship_metadata(nonce).is_empty(), "Ship does not exist");
@@ -215,7 +215,6 @@ pub trait ShipNft {
         self.win_recorded_event(nonce, metadata.wins);
     }
 
-    /// Burn a ship SFT (must send back the token).
     #[payable("*")]
     #[endpoint(burnShip)]
     fn burn_ship(&self) {
@@ -231,10 +230,9 @@ pub trait ShipNft {
 
         self.owner_ships(&caller).remove(&nonce);
         self.ship_metadata(nonce).clear();
-        // SFT is now burned (held by contract, will not be returned)
     }
 
-    // ─── Views ───────────────────────────────────────────────────────────
+    // ── Views ────────────────────────────────────────────────────────────────
 
     #[view(getShipMetadata)]
     fn get_ship_metadata(&self, nonce: u64) -> ShipMetadata<Self::Api> {
@@ -253,5 +251,11 @@ pub trait ShipNft {
     #[view(getMintPrice)]
     fn get_mint_price(&self) -> BigUint {
         self.mint_price().get()
+    }
+
+    /// ✅ Supernova diagnostic: current block timestamp in milliseconds.
+    #[view(getCurrentTimestampMs)]
+    fn get_current_timestamp_ms(&self) -> u64 {
+        self.blockchain().get_block_timestamp_millis()
     }
 }
