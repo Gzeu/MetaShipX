@@ -1,61 +1,52 @@
 import { useState, useEffect, useCallback } from 'react';
-import {
-  fetchLeaderboard,
-  fetchPlayerRank,
-  LeaderboardCategory,
-  LeaderboardEntry,
-} from '../services/leaderboard.service';
+import { getLeaderboard, getPlayerRank, LeaderboardEntry } from '../services/leaderboard.service';
+import { useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
 
-interface UseLeaderboardResult {
+export interface UseLeaderboardResult {
   entries: LeaderboardEntry[];
-  total: number;
-  hasMore: boolean;
+  myEntry: LeaderboardEntry | null;
   loading: boolean;
   error: string | null;
-  category: LeaderboardCategory;
-  page: number;
-  setCategory: (c: LeaderboardCategory) => void;
-  setPage: (p: number) => void;
-  refresh: () => void;
-  playerRank: { rank: number; total: number } | null;
+  refresh: () => Promise<void>;
+  refreshedAt: Date | null;
 }
 
-export function useLeaderboard(playerAddress?: string): UseLeaderboardResult {
+export function useLeaderboard(top = 50, autoRefreshMs = 30_000): UseLeaderboardResult {
+  const { address } = useGetAccountInfo();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [total, setTotal] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
+  const [myEntry, setMyEntry] = useState<LeaderboardEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [category, setCategory] = useState<LeaderboardCategory>('winRate');
-  const [page, setPage] = useState(1);
-  const [playerRank, setPlayerRank] = useState<{ rank: number; total: number } | null>(null);
+  const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
 
-  const load = useCallback(async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [result, rank] = await Promise.all([
-        fetchLeaderboard(category, page, 10),
-        playerAddress ? fetchPlayerRank(playerAddress, category) : Promise.resolve(null),
-      ]);
-      setEntries(result.entries);
-      setTotal(result.total);
-      setHasMore(result.hasMore);
-      setPlayerRank(rank);
-    } catch (e: any) {
-      setError(e?.message ?? 'Failed to load leaderboard');
+      const data = await getLeaderboard(top);
+      setEntries(data);
+      setRefreshedAt(new Date());
+      if (address) {
+        const mine = data.find(e => e.address === address) ??
+          await getPlayerRank(address);
+        setMyEntry(mine ?? null);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load leaderboard');
     } finally {
       setLoading(false);
     }
-  }, [category, page, playerAddress]);
+  }, [address, top]);
 
-  useEffect(() => { load(); }, [load]);
+  // Initial load
+  useEffect(() => { refresh(); }, [refresh]);
 
-  // Reset to page 1 when category changes
-  const handleSetCategory = useCallback((c: LeaderboardCategory) => {
-    setCategory(c);
-    setPage(1);
-  }, []);
+  // Auto-refresh
+  useEffect(() => {
+    if (!autoRefreshMs) return;
+    const id = setInterval(refresh, autoRefreshMs);
+    return () => clearInterval(id);
+  }, [refresh, autoRefreshMs]);
 
-  return { entries, total, hasMore, loading, error, category, page, setCategory: handleSetCategory, setPage, refresh: load, playerRank };
+  return { entries, myEntry, loading, error, refresh, refreshedAt };
 }

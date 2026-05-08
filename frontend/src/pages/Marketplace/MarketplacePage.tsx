@@ -1,140 +1,207 @@
-import React, { useEffect, useState } from 'react';
-import { useGetAccountInfo, useGetIsLoggedIn } from '@multiversx/sdk-dapp/hooks';
-import { getUserShips, mintShip, getMintPrice, ShipInfo } from '../../services/nft.service';
-import { playButtonClick, playPlacement } from '../../utils/sounds';
+import React, { useState } from 'react';
+import { useGetAccountInfo } from '@multiversx/sdk-dapp/hooks';
+import { useNft } from '../../hooks/useNft';
+import { useSound } from '../../hooks/useSound';
 import './MarketplacePage.css';
 
 const SHIP_CATALOG = [
-  { type: 'Destroyer',  size: 2, rarity: 'Common',    price: '0.05', emoji: '🛥' },
-  { type: 'Submarine',  size: 3, rarity: 'Uncommon',  price: '0.08', emoji: '🤿' },
-  { type: 'Cruiser',    size: 3, rarity: 'Uncommon',  price: '0.08', emoji: '⛵' },
-  { type: 'Battleship', size: 4, rarity: 'Rare',      price: '0.15', emoji: '🚢' },
-  { type: 'Carrier',    size: 5, rarity: 'Legendary', price: '0.30', emoji: '🛸' },
-] as const;
+  { type: 'Destroyer',   size: 2, price: '0.05', rarity: 'Common',    icon: '🔫', color: '#64748b' },
+  { type: 'Submarine',   size: 3, price: '0.08', rarity: 'Uncommon',  icon: '🤿', color: '#2563eb' },
+  { type: 'Cruiser',     size: 3, price: '0.08', rarity: 'Uncommon',  icon: '⚓', color: '#2563eb' },
+  { type: 'Battleship',  size: 4, price: '0.15', rarity: 'Rare',      icon: '🚢', color: '#7c3aed' },
+  { type: 'Carrier',     size: 5, price: '0.30', rarity: 'Legendary', icon: '🛸', color: '#fbbf24' },
+];
 
-const RARITY_COLOR: Record<string, string> = {
-  Common: '#64748b',
-  Uncommon: '#4ade80',
-  Rare: '#7dd3fc',
-  Legendary: '#fbbf24',
+const RARITY_COLORS: Record<string, string> = {
+  Common: '#64748b', Uncommon: '#2563eb', Rare: '#7c3aed', Legendary: '#fbbf24',
 };
 
-type Tab = 'mint' | 'fleet';
+type Tab = 'mint' | 'fleet' | 'upgrade';
 
 export default function MarketplacePage() {
   const { address } = useGetAccountInfo();
-  const isLoggedIn = useGetIsLoggedIn();
+  const { ships, mintPrice, mint, upgrade, loading } = useNft();
+  const { play } = useSound();
   const [tab, setTab] = useState<Tab>('mint');
-  const [myShips, setMyShips] = useState<ShipInfo[]>([]);
-  const [mintPrice, setMintPrice] = useState<string>('0.05');
   const [minting, setMinting] = useState<string | null>(null);
-  const [loadingFleet, setLoadingFleet] = useState(false);
-  const [txHash, setTxHash] = useState<string | null>(null);
-
-  useEffect(() => {
-    getMintPrice().then(p => setMintPrice(p)).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (tab === 'fleet' && address) {
-      setLoadingFleet(true);
-      getUserShips(address)
-        .then(ships => setMyShips(ships))
-        .finally(() => setLoadingFleet(false));
-    }
-  }, [tab, address]);
+  const [upgrading, setUpgrading] = useState<number | null>(null);
+  const [txMsg, setTxMsg] = useState<string | null>(null);
 
   const handleMint = async (shipType: string, price: string) => {
-    if (!isLoggedIn || minting) return;
-    playButtonClick();
+    if (!address || minting) return;
     setMinting(shipType);
-    setTxHash(null);
+    setTxMsg(null);
     try {
-      const hash = await mintShip(shipType, price);
-      setTxHash(hash);
-      playPlacement();
+      await mint(shipType, price);
+      play('join');
+      setTxMsg(`✅ ${shipType} minted successfully!`);
     } catch (e) {
-      console.error(e);
+      setTxMsg(`❌ Mint failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
     } finally {
       setMinting(null);
+    }
+  };
+
+  const handleUpgrade = async (nonce: number) => {
+    if (!address || upgrading !== null) return;
+    setUpgrading(nonce);
+    setTxMsg(null);
+    try {
+      await upgrade(nonce);
+      play('click');
+      setTxMsg(`✅ Ship #${nonce} upgraded!`);
+    } catch (e) {
+      setTxMsg(`❌ Upgrade failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+    } finally {
+      setUpgrading(null);
     }
   };
 
   return (
     <div className="mp-page">
       <div className="mp-hero">
-        <h1 className="mp-title">🚢 Ship Marketplace</h1>
-        <p className="mp-sub">Mint NFT ships to command in battle. Each ship is a unique SFT on MultiversX.</p>
+        <h1 className="mp-title">⚓ Ship Marketplace</h1>
+        <p className="mp-sub">Mint NFT ships, upgrade your fleet, and dominate the seas.</p>
       </div>
 
-      <div className="mp-tabs">
-        <button className={`mp-tab ${tab === 'mint' ? 'active' : ''}`} onClick={() => { setTab('mint'); playButtonClick(); }}>Mint Ships</button>
-        <button className={`mp-tab ${tab === 'fleet' ? 'active' : ''}`} onClick={() => { setTab('fleet'); playButtonClick(); }}>My Fleet ({myShips.length})</button>
-      </div>
-
-      {txHash && (
-        <div className="mp-tx-success">
-          ✅ Transaction sent! <a href={`https://devnet-explorer.multiversx.com/transactions/${txHash}`} target="_blank" rel="noopener noreferrer">View on Explorer ↗</a>
+      {txMsg && (
+        <div className={`mp-toast ${txMsg.startsWith('✅') ? 'mp-toast--ok' : 'mp-toast--err'}`}>
+          {txMsg}
+          <button className="mp-toast-close" onClick={() => setTxMsg(null)}>✕</button>
         </div>
       )}
 
+      {/* Tabs */}
+      <div className="mp-tabs">
+        {(['mint', 'fleet', 'upgrade'] as Tab[]).map(t => (
+          <button
+            key={t}
+            className={`mp-tab ${tab === t ? 'active' : ''}`}
+            onClick={() => setTab(t)}
+          >
+            {t === 'mint' ? '🪙 Mint' : t === 'fleet' ? '🚢 My Fleet' : '⬆️ Upgrade'}
+          </button>
+        ))}
+      </div>
+
+      {/* Mint tab */}
       {tab === 'mint' && (
         <div className="mp-catalog">
           {SHIP_CATALOG.map(ship => (
-            <div key={ship.type} className={`mp-card rarity-${ship.rarity.toLowerCase()}`}>
-              <div className="mp-card-emoji">{ship.emoji}</div>
-              <div className="mp-card-name">{ship.type}</div>
-              <div className="mp-card-rarity" style={{ color: RARITY_COLOR[ship.rarity] }}>
-                {ship.rarity}
+            <div key={ship.type} className="mp-card">
+              <div className="mp-card-icon" style={{ color: ship.color }}>{ship.icon}</div>
+              <div className="mp-card-body">
+                <div className="mp-card-name">{ship.type}</div>
+                <div className="mp-card-meta">
+                  <span className="mp-rarity" style={{ color: RARITY_COLORS[ship.rarity] }}>
+                    {ship.rarity}
+                  </span>
+                  <span className="mp-size">Size {ship.size}</span>
+                </div>
+                <div className="mp-card-cells">
+                  {Array.from({ length: 5 }, (_, i) => (
+                    <div
+                      key={i}
+                      className={`mp-cell ${i < ship.size ? 'filled' : ''}`}
+                    />
+                  ))}
+                </div>
               </div>
-              <div className="mp-card-stats">
-                <span>Size: {ship.size}</span>
-                <span>Cells</span>
+              <div className="mp-card-footer">
+                <span className="mp-price">{ship.price} EGLD</span>
+                <button
+                  className="mp-mint-btn"
+                  onClick={() => handleMint(ship.type, ship.price)}
+                  disabled={!address || minting !== null}
+                >
+                  {minting === ship.type ? 'Minting…' : 'Mint'}
+                </button>
               </div>
-              <div className="mp-card-ship-viz">
-                {Array.from({ length: ship.size }).map((_, i) => (
-                  <div key={i} className="mp-ship-cell" />
-                ))}
-              </div>
-              <div className="mp-card-price">{ship.price} EGLD</div>
-              <button
-                className="mp-mint-btn"
-                onClick={() => handleMint(ship.type, ship.price)}
-                disabled={!isLoggedIn || minting !== null}
-              >
-                {minting === ship.type ? 'Minting…' : 'Mint Now'}
-              </button>
             </div>
           ))}
         </div>
       )}
 
+      {/* Fleet tab */}
       {tab === 'fleet' && (
         <div className="mp-fleet">
-          {loadingFleet ? (
-            <div className="mp-fleet-loading">
-              {Array.from({ length: 4 }).map((_, i) => <div key={i} className="mp-skeleton" />)}
+          {loading ? (
+            <div className="mp-loading">
+              <div className="mp-spinner" />
+              <p>Loading your fleet…</p>
             </div>
-          ) : myShips.length === 0 ? (
+          ) : !address ? (
+            <div className="mp-empty">Connect your wallet to see your fleet.</div>
+          ) : ships.length === 0 ? (
             <div className="mp-empty">
               <div className="mp-empty-icon">⚓</div>
-              <h3>No ships yet</h3>
-              <p>Mint your first ship to build your fleet.</p>
-              <button className="mp-mint-btn" onClick={() => setTab('mint')}>Mint a Ship</button>
+              <p>No ships yet. Mint your first ship!</p>
+              <button className="mp-mint-cta" onClick={() => setTab('mint')}>Go Mint</button>
             </div>
           ) : (
-            <div className="mp-catalog">
-              {myShips.map(ship => (
-                <div key={ship.nonce} className="mp-card mp-card--owned">
-                  <div className="mp-card-emoji">
-                    {SHIP_CATALOG.find(s => s.type === ship.shipType)?.emoji ?? '🚢'}
+            <div className="mp-fleet-grid">
+              {ships.map(ship => {
+                const def = SHIP_CATALOG.find(s => s.type === ship.shipType);
+                return (
+                  <div key={ship.nonce} className="mp-fleet-card">
+                    <div className="mp-fleet-icon" style={{ color: def?.color }}>{def?.icon ?? '🚢'}</div>
+                    <div className="mp-fleet-info">
+                      <div className="mp-fleet-name">{ship.shipType}</div>
+                      <div className="mp-fleet-level">Level {ship.level}</div>
+                      <div className="mp-fleet-wins">{ship.wins} wins</div>
+                    </div>
+                    <div className="mp-fleet-bar">
+                      <div className="mp-fleet-fill" style={{ width: `${ship.level * 10}%` }} />
+                    </div>
                   </div>
-                  <div className="mp-card-name">{ship.shipType}</div>
-                  <div className="mp-card-badge">Lv. {ship.level}</div>
-                  <div className="mp-card-wins">{ship.wins} wins</div>
-                  <div className="mp-card-nonce">#{ship.nonce}</div>
-                </div>
-              ))}
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Upgrade tab */}
+      {tab === 'upgrade' && (
+        <div className="mp-fleet">
+          {!address ? (
+            <div className="mp-empty">Connect your wallet to upgrade ships.</div>
+          ) : ships.length === 0 ? (
+            <div className="mp-empty">No ships to upgrade. Mint some first!</div>
+          ) : (
+            <div className="mp-upgrade-grid">
+              {ships.map(ship => {
+                const def = SHIP_CATALOG.find(s => s.type === ship.shipType);
+                const upgCost = ((ship.level) * parseFloat(def?.price ?? '0.05')).toFixed(4);
+                const maxLevel = ship.level >= 10;
+                return (
+                  <div key={ship.nonce} className="mp-upgrade-card">
+                    <div className="mp-upg-icon" style={{ color: def?.color }}>{def?.icon ?? '🚢'}</div>
+                    <div className="mp-upg-info">
+                      <div className="mp-upg-name">{ship.shipType} <span className="mp-upg-nonce">#{ship.nonce}</span></div>
+                      <div className="mp-upg-level">
+                        {'★'.repeat(ship.level)}{'☆'.repeat(10 - ship.level)}
+                      </div>
+                    </div>
+                    <div className="mp-upg-action">
+                      {maxLevel ? (
+                        <span className="mp-upg-max">MAX</span>
+                      ) : (
+                        <>
+                          <span className="mp-upg-cost">{upgCost} EGLD</span>
+                          <button
+                            className="mp-upg-btn"
+                            onClick={() => handleUpgrade(ship.nonce)}
+                            disabled={upgrading !== null}
+                          >
+                            {upgrading === ship.nonce ? '…' : '⬆'}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
