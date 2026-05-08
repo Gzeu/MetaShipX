@@ -1,55 +1,55 @@
 import { Routes, Route } from 'react-router-dom';
-import { ChakraProvider, Box, ColorModeScript } from '@chakra-ui/react';
-import { theme } from './styles/theme';
-import Layout from './components/Layout';
+import Layout    from './components/Layout';
+import AuthGuard from './components/AuthGuard/AuthGuard';
 
-// Pages
+// ── Pages (canonical versions) ──
 import HomePage        from './pages/Home';
+import UnlockPage      from './pages/UnlockPage/UnlockPage';
+import LobbyPage       from './pages/LobbyPage/LobbyPage';
+import { GamePage }    from './pages/GamePage/GamePage';
+import TournamentsPage from './pages/Tournaments';
+import TournamentPage  from './pages/TournamentPage/TournamentPage';
+import StakingPage     from './pages/StakingPage/StakingPage';
 import MarketplacePage from './pages/Marketplace';
 import ProfilePage     from './pages/Profile';
 import LeaderboardPage from './pages/Leaderboard';
 import NotFoundPage    from './pages/NotFound';
-import LobbyPage       from './pages/LobbyPage/LobbyPage';
-import { GamePage }    from './pages/GamePage/GamePage';
-import TournamentPage  from './pages/TournamentPage/TournamentPage';
-import StakingPage     from './pages/StakingPage/StakingPage';
-import TournamentsPage from './pages/Tournaments';
-import UnlockPage      from './pages/UnlockPage/UnlockPage';
 
-function App() {
+export default function App() {
   return (
-    <ChakraProvider theme={theme}>
-      <ColorModeScript initialColorMode={theme.config?.initialColorMode ?? 'dark'} />
-      <Box minH="100vh" bg="gray.900">
-        <Layout>
-          <Routes>
-            {/* Public */}
-            <Route path="/"              element={<HomePage />} />
-            <Route path="/unlock"        element={<UnlockPage />} />
-            <Route path="/leaderboard"   element={<LeaderboardPage />} />
+    <Layout>
+      <Routes>
+        {/* ── Public ── */}
+        <Route path="/"            element={<HomePage />} />
+        <Route path="/unlock"      element={<UnlockPage />} />
+        <Route path="/leaderboard" element={<LeaderboardPage />} />
 
-            {/* Game */}
-            <Route path="/lobby"         element={<LobbyPage />} />
-            <Route path="/game/:gameId"  element={<GamePage />} />
+        {/* ── Protected ── */}
+        <Route path="/lobby" element={
+          <AuthGuard><LobbyPage /></AuthGuard>
+        } />
+        <Route path="/game/:gameId" element={
+          <AuthGuard><GamePage /></AuthGuard>
+        } />
+        <Route path="/tournaments" element={
+          <AuthGuard><TournamentsPage /></AuthGuard>
+        } />
+        <Route path="/tournaments/:id" element={
+          <AuthGuard><TournamentPage /></AuthGuard>
+        } />
+        <Route path="/staking" element={
+          <AuthGuard><StakingPage /></AuthGuard>
+        } />
+        <Route path="/marketplace" element={
+          <AuthGuard><MarketplacePage /></AuthGuard>
+        } />
+        <Route path="/profile" element={
+          <AuthGuard><ProfilePage /></AuthGuard>
+        } />
 
-            {/* Tournaments */}
-            <Route path="/tournaments"     element={<TournamentsPage />} />
-            <Route path="/tournaments/:id" element={<TournamentPage />} />
-
-            {/* Staking & NFT */}
-            <Route path="/staking"       element={<StakingPage />} />
-            <Route path="/marketplace"   element={<MarketplacePage />} />
-
-            {/* Profile */}
-            <Route path="/profile"       element={<ProfilePage />} />
-
-            {/* 404 */}
-            <Route path="*"             element={<NotFoundPage />} />
-          </Routes>
-        </Layout>
-      </Box>
-    </ChakraProvider>
+        {/* ── 404 ── */}
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </Layout>
   );
 }
-
-export default App;
