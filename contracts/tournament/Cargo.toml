@@ -1,20 +1,15 @@
 [package]
 name = "tournament"
-version = "0.1.0"
+version = "0.0.1"
+authors = ["MetaShipX"]
 edition = "2021"
+publish = false
 
 [lib]
 crate-type = ["cdylib"]
 
-[features]
-mx-sdk-debug = ["multiversx-sc-scenario/debug"]
-
 [dependencies.multiversx-sc]
-version = "0.45.0"
-features = ["esdt"]
-
-[dependencies.multiversx-sc-modules]
-version = "0.45.0"
+version = "0.54"
 
 [dev-dependencies.multiversx-sc-scenario]
-version = "0.45.0"
+version = "0.54"

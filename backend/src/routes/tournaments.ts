@@ -1,91 +1,102 @@
 import { Router, Request, Response } from 'express';
-import { randomUUID } from 'crypto';
-import type { Tournament, ApiResponse } from '../types';
+import { config } from '../config';
+import { ApiResponse, Tournament } from '../types';
 
-export const tournamentsRouter = Router();
+const router = Router();
 
-// In-memory store — swap for DB (Postgres/Supabase) when ready
-const store = new Map<string, Tournament>();
+// Simple in-memory cache
+interface Cache<T> { data: T; ts: number; }
+const cache = new Map<string, Cache<unknown>>();
+const TTL = config.cacheTtl * 1000;
 
-function seed(): void {
-  const t: Tournament = {
-    id: randomUUID(),
-    name: 'Alpha Fleet Cup',
-    status: 'registration',
-    entryFee: '10000000000000000',   // 0.01 EGLD
-    prizePool: '0',
-    maxPlayers: 8,
-    currentPlayers: 0,
-    players: [],
-    startTime: Date.now() + 3_600_000,
-    endTime: null,
-    winner: null,
-    bracket: [],
-  };
-  store.set(t.id, t);
+function cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.ts < TTL) return Promise.resolve(hit.data as T);
+  return fn().then(data => { cache.set(key, { data, ts: Date.now() }); return data; });
 }
-seed();
+
+async function queryContract(funcName: string, args: string[] = []): Promise<string[]> {
+  const res = await fetch(`${config.mxApiUrl}/vm-values/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scAddress: config.tournamentContract, funcName, args }),
+  });
+  const json = await res.json();
+  return json?.data?.returnData ?? [];
+}
+
+function b64toHex(b64: string): string {
+  return Buffer.from(b64, 'base64').toString('hex');
+}
+
+function parseU64(b64: string): number {
+  return parseInt(b64toHex(b64), 16);
+}
 
 // GET /api/tournaments
-tournamentsRouter.get('/', (_req: Request, res: Response) => {
-  const data = Array.from(store.values());
-  const body: ApiResponse<Tournament[]> = { success: true, data, timestamp: Date.now() };
-  res.json(body);
+router.get('/', async (_req: Request, res: Response) => {
+  try {
+    const ids = await cached('tournaments:active', async () => {
+      const raw = await queryContract('getActiveTournaments');
+      return raw.map(parseU64);
+    });
+
+    const tournaments: Tournament[] = await Promise.all(
+      ids.map(async (id) => {
+        const raw = await queryContract('getTournament', [id.toString(16)]);
+        if (!raw.length) return null;
+        const statuses = ['Open', 'InProgress', 'Finished', 'Cancelled'] as const;
+        return {
+          id,
+          name: Buffer.from(raw[1] || '', 'base64').toString(),
+          entryFee: BigInt('0x' + b64toHex(raw[2] || 'AA')).toString(),
+          prizePool: BigInt('0x' + b64toHex(raw[3] || 'AA')).toString(),
+          maxPlayers: parseU64(raw[4] || 'AA'),
+          currentPlayers: parseU64(raw[5] || 'AA'),
+          status: statuses[parseU64(raw[6] || 'AA')] ?? 'Open',
+          winner: null,
+        } satisfies Tournament;
+      }),
+    );
+
+    const resp: ApiResponse<Tournament[]> = {
+      data: tournaments.filter(Boolean) as Tournament[],
+      success: true,
+    };
+    res.json(resp);
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to fetch tournaments' });
+  }
 });
 
 // GET /api/tournaments/:id
-tournamentsRouter.get('/:id', (req: Request, res: Response) => {
-  const t = store.get(req.params.id);
-  if (!t) { res.status(404).json({ success: false, error: 'Tournament not found', statusCode: 404 }); return; }
-  res.json({ success: true, data: t, timestamp: Date.now() } satisfies ApiResponse<Tournament>);
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ success: false, error: 'Invalid id' }); return; }
+
+    const raw = await cached(`tournaments:${id}`, () =>
+      queryContract('getTournament', [id.toString(16)])
+    );
+
+    if (!raw.length) { res.status(404).json({ success: false, error: 'Not found' }); return; }
+
+    const statuses = ['Open', 'InProgress', 'Finished', 'Cancelled'] as const;
+    const tournament: Tournament = {
+      id,
+      name: Buffer.from(raw[1] || '', 'base64').toString(),
+      entryFee: BigInt('0x' + b64toHex(raw[2] || 'AA')).toString(),
+      prizePool: BigInt('0x' + b64toHex(raw[3] || 'AA')).toString(),
+      maxPlayers: parseU64(raw[4] || 'AA'),
+      currentPlayers: parseU64(raw[5] || 'AA'),
+      status: statuses[parseU64(raw[6] || 'AA')] ?? 'Open',
+      winner: null,
+    };
+
+    res.json({ data: tournament, success: true });
+  } catch {
+    res.status(500).json({ success: false, error: 'Failed to fetch tournament' });
+  }
 });
 
-// POST /api/tournaments  { name, entryFee, maxPlayers, startTime }
-tournamentsRouter.post('/', (req: Request, res: Response) => {
-  const { name, entryFee, maxPlayers, startTime } = req.body as Partial<Tournament>;
-  if (!name || !entryFee || !maxPlayers || !startTime) {
-    res.status(400).json({ success: false, error: 'Missing required fields: name, entryFee, maxPlayers, startTime', statusCode: 400 });
-    return;
-  }
-  const t: Tournament = {
-    id: randomUUID(),
-    name,
-    status: 'upcoming',
-    entryFee: String(entryFee),
-    prizePool: '0',
-    maxPlayers: Number(maxPlayers),
-    currentPlayers: 0,
-    players: [],
-    startTime: Number(startTime),
-    endTime: null,
-    winner: null,
-    bracket: [],
-  };
-  store.set(t.id, t);
-  res.status(201).json({ success: true, data: t, timestamp: Date.now() } satisfies ApiResponse<Tournament>);
-});
-
-// POST /api/tournaments/:id/join  { address }
-tournamentsRouter.post('/:id/join', (req: Request, res: Response) => {
-  const t = store.get(req.params.id);
-  if (!t) { res.status(404).json({ success: false, error: 'Tournament not found', statusCode: 404 }); return; }
-  if (t.status !== 'registration') {
-    res.status(400).json({ success: false, error: 'Tournament not open for registration', statusCode: 400 });
-    return;
-  }
-  const { address } = req.body as { address?: string };
-  if (!address) { res.status(400).json({ success: false, error: 'address is required', statusCode: 400 }); return; }
-  if (t.players.includes(address)) {
-    res.status(409).json({ success: false, error: 'Already registered', statusCode: 409 });
-    return;
-  }
-  if (t.currentPlayers >= t.maxPlayers) {
-    res.status(400).json({ success: false, error: 'Tournament is full', statusCode: 400 });
-    return;
-  }
-  t.players.push(address);
-  t.currentPlayers += 1;
-  if (t.currentPlayers >= t.maxPlayers) t.status = 'active';
-  store.set(t.id, t);
-  res.json({ success: true, data: t, timestamp: Date.now() } satisfies ApiResponse<Tournament>);
-});
+export default router;

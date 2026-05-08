@@ -1,0 +1,2 @@
+# Place your deployer.pem wallet file here (NEVER commit it to git)
+# This directory is gitignored except for this placeholder

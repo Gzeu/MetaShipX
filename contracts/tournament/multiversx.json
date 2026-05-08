@@ -1,13 +1,9 @@
 {
-  "buildMetadata": {
-    "rustVersion": "1.78.0",
-    "contractCrate": {
-      "name": "tournament",
-      "version": "0.1.0"
-    },
-    "framework": {
-      "name": "multiversx-sc",
-      "version": "0.45.0"
-    }
+  "language": "rust",
+  "settings": {
+    "main": "src/lib.rs"
+  },
+  "build": {
+    "rustflags": ["-C", "opt-level=z"]
   }
 }

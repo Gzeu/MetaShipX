@@ -1,57 +1,66 @@
-import React, { Suspense, lazy } from 'react';
+import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { DappProvider } from '@multiversx/sdk-dapp/wrappers';
 import { NotificationModal } from '@multiversx/sdk-dapp/UI/NotificationModal';
 import { SignTransactionsModals } from '@multiversx/sdk-dapp/UI/SignTransactionsModals';
 import { TransactionsToastList } from '@multiversx/sdk-dapp/UI/TransactionsToastList';
-import { ENVIRONMENT, WALLETCONNECT_PROJECT_ID } from './config';
-import { Navbar } from './components/Navbar';
-import { PageLoader } from './components/PageLoader';
 
-const HomePage        = lazy(() => import('./pages/HomePage'));
-const GamePage        = lazy(() => import('./pages/Game'));
-const LobbyPage       = lazy(() => import('./pages/LobbyPage/LobbyPage'));
-const LeaderboardPage = lazy(() => import('./pages/LeaderboardPage'));
-const StakingPage     = lazy(() => import('./pages/StakingPage'));
-const MarketplacePage = lazy(() => import('./pages/MarketplacePage'));
-const SpectatorPage   = lazy(() => import('./pages/SpectatorPage'));
-const TournamentsPage = lazy(() => import('./pages/TournamentsPage'));
-const ProfilePage     = lazy(() => import('./pages/ProfilePage'));
-const UnlockPage      = lazy(() => import('./pages/UnlockPage/UnlockPage'));
-const NotFoundPage    = lazy(() => import('./pages/NotFoundPage'));
+import Navbar from './components/Navbar/Navbar';
+import Home from './pages/Home';
+import Leaderboard from './pages/Leaderboard';
+import Marketplace from './pages/Marketplace';
+import Profile from './pages/Profile';
+import Tournaments from './pages/Tournaments';
+import { GamePage } from './pages/GamePage/GamePage';
+import { LobbyPage } from './pages/LobbyPage/LobbyPage';
+import { StakingPage } from './pages/StakingPage';
+import { SpectatorPage } from './pages/SpectatorPage';
+import NotFound from './pages/NotFound';
+
+const ENVIRONMENT = (import.meta.env.VITE_ENV as 'devnet' | 'testnet' | 'mainnet') || 'devnet';
+
+const customNetworkConfig = {
+  name: 'MetaShipX',
+  apiTimeout: 10_000,
+  walletConnectV2ProjectId: '7b9f8e2c4d1a0f3b6e9c2d5a8b1e4f7c',
+  ...(ENVIRONMENT === 'devnet' && {
+    egldLabel: 'xEGLD',
+    decimals: '18',
+    gasPerDataByte: '1500',
+    walletAddress: 'https://devnet-wallet.multiversx.com',
+    apiAddress: import.meta.env.VITE_API_URL || 'https://devnet-api.multiversx.com',
+    explorerAddress: 'https://devnet-explorer.multiversx.com',
+    chainId: 'D',
+  }),
+};
 
 export default function App() {
   return (
     <DappProvider
       environment={ENVIRONMENT}
-      customNetworkConfig={{
-        name: 'MetaShipX',
-        ...(WALLETCONNECT_PROJECT_ID && {
-          walletConnectV2ProjectId: WALLETCONNECT_PROJECT_ID,
-        }),
-      }}
+      customNetworkConfig={customNetworkConfig}
+      dappConfig={{ shouldUseWebViewProvider: true }}
     >
       <BrowserRouter>
         <Navbar />
+        <TransactionsToastList />
         <NotificationModal />
         <SignTransactionsModals />
-        <TransactionsToastList />
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route path="/"             element={<HomePage />} />
-            <Route path="/game/:id"     element={<GamePage />} />
-            <Route path="/lobby"        element={<LobbyPage />} />
-            <Route path="/leaderboard"  element={<LeaderboardPage />} />
-            <Route path="/staking"      element={<StakingPage />} />
-            <Route path="/marketplace"  element={<MarketplacePage />} />
-            <Route path="/spectate/:id" element={<SpectatorPage />} />
-            <Route path="/tournaments"  element={<TournamentsPage />} />
-            <Route path="/profile"      element={<ProfilePage />} />
-            <Route path="/unlock"       element={<UnlockPage />} />
-            <Route path="/404"          element={<NotFoundPage />} />
-            <Route path="*"             element={<Navigate to="/404" replace />} />
-          </Routes>
-        </Suspense>
+
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/lobby" element={<LobbyPage />} />
+          <Route path="/game/:gameId" element={<GamePage />} />
+          <Route path="/spectate/:gameId" element={<SpectatorPage />} />
+          <Route path="/leaderboard" element={<Leaderboard />} />
+          <Route path="/marketplace" element={<Marketplace />} />
+          <Route path="/staking" element={<StakingPage />} />
+          <Route path="/tournaments" element={<Tournaments />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/profile/:address" element={<Profile />} />
+          <Route path="/404" element={<NotFound />} />
+          <Route path="*" element={<Navigate to="/404" replace />} />
+        </Routes>
       </BrowserRouter>
     </DappProvider>
   );
