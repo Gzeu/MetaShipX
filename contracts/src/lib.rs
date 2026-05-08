@@ -1,14 +1,6 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+// This file is intentionally kept as a placeholder.
+// All contract source code lives under contracts/<contract-name>/src/
+// See: contracts/battleship/src/lib.rs
+//      contracts/nft/src/lib.rs
+//      contracts/staking/src/lib.rs
+//      contracts/tournament/src/lib.rs
