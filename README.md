@@ -15,9 +15,9 @@
 
 ---
 
-## 🎮 Ce este MetaShipX?
+## 🎮 What is MetaShipX?
 
-Doi jucători se bat pe o grilă **10×10**, fiecare comandând o flotă de **NFT ships**. Fiecare mutare este o tranzacție blockchain. Câștigătorul ia mizele combinate EGLD. Taxele din meciuri alimentează automat un **reward pool de staking**. Jucătorii pot **lista și cumpăra nave pe marketplace**, debloca **skin-uri cosmetice**, și lăsa alți utilizatori să **urmărească live meciurile** cu sunete + animații hit/miss.
+Two players battle on a **10×10 grid**, each commanding a fleet of **NFT ships**. Every move is a blockchain transaction. The winner takes the combined EGLD wager. Match fees automatically fund a **staking reward pool**. Players can **list and buy ships on the marketplace**, unlock **cosmetic skins**, and let other users **watch live matches** with hit/miss sounds and animations.
 
 **Stack:** Rust smart contracts · React 18 + Vite · TypeScript · Chakra UI · `@multiversx/sdk-dapp` v5 · NestJS backend · WebSocket real-time · PostgreSQL · Docker
 
@@ -25,20 +25,20 @@ Doi jucători se bat pe o grilă **10×10**, fiecare comandând o flotă de **NF
 
 ## ✨ Features
 
-| Zonă | Descriere |
+| Area | Description |
 |---|---|
-| **Battleship PvP** | Grilă 10×10, wager on-chain EGLD, atacuri turn-based |
-| **NFT Fleet** | Mint nave SFT, upgrade level 1-10, tracking victorii |
-| **Staking** | 20% APR, reward pool alimentat din taxe meci |
-| **Tournaments** | Bracket eliminatoriu cu premii EGLD |
-| **Marketplace** | Listează/cumpără nave NFT între jucători |
-| **Spectator Mode** | Watch live read-only cu WebSocket real-time |
-| **Cosmetics** | Ship skins/traits pentru customizare vizuală |
-| **Imersiune** | Sound effects + animații hit/miss/sunk/game-over |
+| **Battleship PvP** | 10×10 grid, on-chain EGLD wager, turn-based attacks |
+| **NFT Fleet** | Mint SFT ships, upgrade level 1–10, win tracking |
+| **Staking** | 20% APR, reward pool funded by match fees |
+| **Tournaments** | Elimination bracket with EGLD prizes |
+| **Marketplace** | List and buy NFT ships between players |
+| **Spectator Mode** | Live read-only watch via real-time WebSocket |
+| **Cosmetics** | Ship skins/traits for visual customisation |
+| **Immersion** | Sound effects + hit/miss/sunk/game-over animations |
 
 ---
 
-## 🏗 Arhitectură
+## 🏗 Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -55,7 +55,8 @@ Doi jucători se bat pe o grilă **10×10**, fiecare comandând o flotă de **NF
 │  EventsGateway (WS)    │    │  contracts/battleship/          │
 │  PostgreSQL (TypeORM)  │    │  contracts/nft/                 │
 │  mx-notifier listener  │    │  contracts/staking/             │
-└────────────────────────┘    │  contracts/tournament/          │
+└────────────────────────┘    │  contracts/marketplace/         │
+                              │  contracts/tournament/          │
                               └─────────────────────────────────┘
 ```
 
@@ -65,34 +66,33 @@ Doi jucători se bat pe o grilă **10×10**, fiecare comandând o flotă de **NF
 
 ### Battleship (`contracts/battleship/`)
 
-| Endpoint | Descriere |
+| Endpoint | Description |
 |---|---|
-| `createGame(bet)` | Creează joc nou cu miză EGLD |
-| `joinGame(gameId)` | Alătură-te cu aceeași miză |
-| `placeShips(gameId, positions)` | Depune hash-ul poziționării navelor |
-| `attack(gameId, row, col)` | Execută atac (turn-based) — cel mai apelat endpoint |
-| `withdraw(gameId)` | Retrage miza dacă adversarul n-a mai jucat (timeout 3 000 block-uri) |
-| `getGameState(gameId)` | Returnează starea completă a jocului |
-| `getPlayerGames(address)` | Lista jocurilor unui jucător |
+| `createGame(bet)` | Create a new game with an EGLD wager |
+| `joinGame(gameId)` | Join with the same wager |
+| `placeShips(gameId, positions)` | Submit the ship-placement hash (commit-reveal) |
+| `attack(gameId, row, col)` | Execute an attack (turn-based) — most-called endpoint |
+| `withdraw(gameId)` | Reclaim wager if opponent times out (3 000 blocks) |
+| `getGameState(gameId)` | Return the full game state |
+| `getPlayerGames(address)` | List all games for a player |
 
-> **Gas optimization:** `attack()` folosește `SetMapper` pentru `O(1)` contains checks,
-> updates batch la o singură scriere finală. Vezi [`GAS_OPTIMIZATION.md`](contracts/battleship/GAS_OPTIMIZATION.md).
+> **Gas optimization:** `attack()` uses `SetMapper` for `O(1)` contains checks and batches all storage writes into a single final write. See [`GAS_OPTIMIZATION.md`](contracts/battleship/GAS_OPTIMIZATION.md).
 
 ### NFT Ships (`contracts/nft/`)
 
-| Endpoint | Descriere |
+| Endpoint | Description |
 |---|---|
-| `registerShipCollection` | Owner issuează colecția SFT (0.05 EGLD, o singură dată) |
-| `mintShip(shipType, name)` | Mintează navă SFT (plătit în EGLD) |
-| `upgradeShip(nonce)` | Crește level navă (max 10), cost = `level × mint_price` |
-| `recordWin(nonce)` | Înregistrează victorie on-chain (apelat de battleship) |
-| `burnShip(nonce)` | Arde nava și returnează tokenul |
-| `getShipMetadata(nonce)` | Metadata navă: tip, level, victorii |
-| `getOwnerShips(address)` | Toate navele unui owner |
+| `registerShipCollection` | Owner issues the SFT collection (0.05 EGLD, once) |
+| `mintShip(shipType, name)` | Mint an SFT ship (paid in EGLD) |
+| `upgradeShip(nonce)` | Increase ship level (max 10), cost = `level × mint_price` |
+| `recordWin(nonce)` | Record an on-chain win (called by battleship contract) |
+| `burnShip(nonce)` | Burn the ship and return the token |
+| `getShipMetadata(nonce)` | Ship metadata: type, level, wins |
+| `getOwnerShips(address)` | All ships for an owner |
 
-**Tipuri nave și prețuri:**
+**Ship types and prices:**
 
-| Navă | Mărime | Preț mint | Raritate |
+| Ship | Size | Mint price | Rarity |
 |---|---|---|---|
 | Destroyer | 2 | 0.05 EGLD | Common |
 | Submarine | 3 | 0.08 EGLD | Uncommon |
@@ -102,49 +102,49 @@ Doi jucători se bat pe o grilă **10×10**, fiecare comandând o flotă de **NF
 
 ### Staking (`contracts/staking/`)
 
-| Endpoint | Descriere |
+| Endpoint | Description |
 |---|---|
-| `fundRewardPool` | Alimentează pool-ul cu EGLD (oricine, inclusiv battleship) |
-| `stake` | Depune EGLD în staking |
-| `unstake(amount)` | Retrage parțial sau total |
-| `claimRewards` | Revendică rewards acumulate (APR 20%/an) |
-| `setApr(value)` | Owner setează APR (bps, default 2000 = 20%) |
-| `getStakeInfo(address)` | Stare staking + rewards pending |
-| `getTotalStaked` | Total EGLD blocat în contract |
-| `getRewardPool` | Sold disponibil pentru rewards |
+| `fundRewardPool` | Fund the pool with EGLD (anyone, including battleship) |
+| `stake` | Deposit EGLD into staking |
+| `unstake(amount)` | Partially or fully withdraw |
+| `claimRewards` | Claim accumulated rewards (20% APR) |
+| `setApr(value)` | Owner sets APR in bps (default 2000 = 20%) |
+| `getStakeInfo(address)` | Staking state + pending rewards |
+| `getTotalStaked` | Total EGLD locked in the contract |
+| `getRewardPool` | Available balance for rewards |
 
 ### Tournament (`contracts/tournament/`) — v2-supernova
 
-| Endpoint | Descriere |
+| Endpoint | Description |
 |---|---|
-| `createTournament(name, entryFee, maxPlayers)` | Creează turneu nou (2-64 jucători) |
-| `joinTournament(tournamentId)` | Alătură-te cu entry fee |
-| `declareTournamentWinner(id, winner)` | Admin declară câștigătorul |
-| `reportMatchResult(tournamentId, matchId, winner)` | Apelat de battleship contract |
-| `cancelTournament(id)` | Anulare + refund toți jucătorii |
-| `getTournament(id)` | Returnează struct complet (cu `created_at_ms` în ms) |
-| `getCurrentTimestampMs` | Diagnostic: timestamp curent în milisecunde |
+| `createTournament(name, entryFee, maxPlayers)` | Create a new tournament (2–64 players) |
+| `joinTournament(tournamentId)` | Join with the entry fee |
+| `declareTournamentWinner(id, winner)` | Admin declares the winner |
+| `reportMatchResult(tournamentId, matchId, winner)` | Called by the battleship contract |
+| `cancelTournament(id)` | Cancel and refund all players |
+| `getTournament(id)` | Return the full tournament struct (with `created_at_ms` in ms) |
+| `getCurrentTimestampMs` | Diagnostic: current timestamp in milliseconds |
 
-> **v2-supernova:** `created_at_ms` folosește `get_block_timestamp_millis()` — corect la 600ms blocks.
-> Fresh deploy necesar față de v1. Vezi [`deploy.md`](contracts/tournament/src/deploy.md).
+> **v2-supernova:** `created_at_ms` uses `get_block_timestamp_millis()` — correct at 600 ms blocks.
+> A fresh deploy is required compared to v1. See [`deploy.md`](contracts/tournament/src/deploy.md).
 
 ---
 
 ## 🖥 Frontend
 
-### Pagini
+### Pages
 
-| Pagină | Rută | Descriere |
+| Page | Route | Description |
 |---|---|---|
-| `Home` | `/` | Landing, statistici, CTA |
-| `LobbyPage` | `/lobby` | Lista jocuri active, creare joc nou |
-| `GamePage` | `/game/:id` | Tabla 10×10, atacuri, timer turn |
-| `SpectatorPage` | `/spectate/:id` | Watch live read-only |
+| `Home` | `/` | Landing, stats, CTA |
+| `LobbyPage` | `/lobby` | Active games list, create new game |
+| `GamePage` | `/game/:id` | 10×10 board, attacks, turn timer |
+| `SpectatorPage` | `/spectate/:id` | Live read-only watch |
 | `StakingPage` | `/staking` | Stake / Unstake / Claim rewards |
-| `MarketplacePage` | `/marketplace` | Cumpără/listează nave NFT |
-| `Tournaments` | `/tournaments` | Bracket-uri, join, rezultate |
-| `Leaderboard` | `/leaderboard` | Top jucători global |
-| `Profile` | `/profile/:address` | Nave, statistici, istoricul jocurilor |
+| `MarketplacePage` | `/marketplace` | Buy/list NFT ships |
+| `Tournaments` | `/tournaments` | Brackets, join, results |
+| `Leaderboard` | `/leaderboard` | Global top players |
+| `Profile` | `/profile/:address` | Ships, stats, match history |
 
 ### Services & Hooks
 
@@ -157,16 +157,16 @@ frontend/src/
 │   ├── nft.service.ts          # mintShip, upgradeShip, getUserShips
 │   └── staking.service.ts      # stake, unstake, claimRewards, getStakingInfo
 ├── hooks/
-│   ├── useGame.ts              # State complet joc + optimistic updates
-│   ├── useStaking.ts           # Auto-fetch + refresh după acțiuni
-│   ├── useGamePolling.ts       # Supernova-tuned: 600ms MY_TURN / 1500ms WAITING
+│   ├── useGame.ts              # Full game state + optimistic updates
+│   ├── useStaking.ts           # Auto-fetch + refresh after actions
+│   ├── useGamePolling.ts       # Supernova-tuned: 600 ms MY_TURN / 1500 ms WAITING
 │   ├── useGameWs.ts            # WebSocket live updates
 │   └── useSound.ts             # Web Audio FX (hit, miss, sunk, victory)
 └── utils/
     └── board.ts                # EMPTY_BOARD, canPlace, applyAttack, serializePositions
 ```
 
-### Autentificare (sdk-dapp v5)
+### Authentication (sdk-dapp v5)
 
 - xPortal Mobile (QR / deeplink)
 - Web Wallet (devnet.multiversx.com)
@@ -175,37 +175,41 @@ frontend/src/
 
 ### Config (`frontend/src/config.ts`)
 
-După fiecare deploy, actualizează adresele:
+Contract addresses are injected via `VITE_` environment variables. Run `deploy-devnet.sh` to auto-generate `frontend/.env.local`.
 
 ```ts
-export const BATTLESHIP_CONTRACT_ADDRESS  = "erd1...";
-export const NFT_CONTRACT_ADDRESS         = "erd1...";
-export const STAKING_CONTRACT_ADDRESS     = "erd1...";
-export const TOURNAMENT_CONTRACT_ADDRESS  = "erd1..."; // v2-supernova — adresă nouă după fresh deploy
-export const NETWORK_PROVIDER_URL         = "https://devnet-gateway.multiversx.com";
+// frontend/src/config.ts
+export const CONTRACTS = {
+  BATTLESHIP_ADDRESS:  import.meta.env.VITE_BATTLESHIP_ADDRESS  ?? '',
+  NFT_ADDRESS:         import.meta.env.VITE_NFT_ADDRESS         ?? '',
+  STAKING_ADDRESS:     import.meta.env.VITE_STAKING_ADDRESS     ?? '',
+  MARKETPLACE_ADDRESS: import.meta.env.VITE_MARKETPLACE_ADDRESS ?? '',
+  TOURNAMENT_ADDRESS:  import.meta.env.VITE_TOURNAMENT_ADDRESS  ?? '', // v2-supernova — new address after fresh deploy
+} as const;
 ```
 
 ---
 
-## 📁 Structura Proiect
+## 📁 Project Structure
 
 ```
 MetaShipX/
 ├── contracts/
-│   ├── battleship/             # Joc PvP on-chain (SetMapper, block_nonce timeouts)
+│   ├── battleship/             # PvP game on-chain (SetMapper, block_nonce timeouts)
 │   │   └── GAS_OPTIMIZATION.md
 │   ├── nft/                    # SFT ships mint + upgrade (minted_at_ms)
-│   ├── staking/                # Reward pool EGLD (millis APR)
-│   └── tournament/             # Turnee eliminatorii (v2-supernova, created_at_ms)
+│   ├── staking/                # EGLD reward pool (millis APR)
+│   ├── marketplace/            # Secondary NFT market
+│   └── tournament/             # Elimination brackets (v2-supernova, created_at_ms)
 │       └── src/deploy.md
 ├── frontend/
 │   ├── src/
 │   │   ├── components/         # GameBoard, Navbar, etc.
-│   │   ├── pages/              # Toate paginile aplicației
-│   │   ├── hooks/              # React hooks custom
-│   │   ├── services/           # Interacțiune contracte
+│   │   ├── pages/              # All app pages
+│   │   ├── hooks/              # Custom React hooks
+│   │   ├── services/           # Contract interactions
 │   │   ├── utils/              # board.ts, formatters
-│   │   └── config.ts           # Adrese contracte per env
+│   │   └── config.ts           # Contract addresses per env
 │   └── Dockerfile.dev
 ├── backend/
 │   ├── src/
@@ -214,15 +218,15 @@ MetaShipX/
 │   ├── .env.example
 │   └── Dockerfile
 ├── docker-compose.yml          # Postgres + Backend + Frontend
-├── deploy-devnet.sh            # Script deploy automat devnet
+├── deploy-devnet.sh            # Automated devnet deploy script
 └── README.md
 ```
 
 ---
 
-## 🚀 Instalare & Rulare Locală
+## 🚀 Installation & Local Setup
 
-### Prerequisite
+### Prerequisites
 
 ```bash
 # Rust + MultiversX framework
@@ -236,18 +240,18 @@ pip install multiversx-sdk-cli
 node --version  # v20+
 ```
 
-### Start local cu Docker
+### Start locally with Docker
 
 ```bash
-# 1. Clonează
+# 1. Clone the repo
 git clone https://github.com/Gzeu/MetaShipX.git
 cd MetaShipX
 
-# 2. Configurează backend
+# 2. Configure backend
 cp backend/.env.example backend/.env.local
-# editează: WEBHOOK_SECRET=<openssl rand -hex 32>
+# edit: WEBHOOK_SECRET=<openssl rand -hex 32>
 
-# 3. Pornește tot
+# 3. Start everything
 docker-compose up -d
 
 # Frontend: http://localhost:5173
@@ -255,7 +259,7 @@ docker-compose up -d
 # Postgres: localhost:5432
 ```
 
-### Start manual (fără Docker)
+### Start manually (without Docker)
 
 ```bash
 # Backend
@@ -267,16 +271,16 @@ cd frontend && npm install && npm run dev
 
 ---
 
-## 📦 Deploy pe Devnet
+## 📦 Deploy to Devnet
 
 ```bash
-# Compilează și deployează toate contractele
+# Build and deploy all contracts automatically
 chmod +x deploy-devnet.sh
-./deploy-devnet.sh
+WALLET_PEM=~/devnet-wallet.pem ./deploy-devnet.sh
 
-# SAU manual:
+# OR manually:
 cd contracts/battleship
-mxpy contract build
+sc-meta all build
 mxpy contract deploy \
   --bytecode=output/battleship.wasm \
   --pem=wallet/devnet.pem \
@@ -284,69 +288,69 @@ mxpy contract deploy \
   --gas-limit=60000000 \
   --proxy=https://devnet-gateway.multiversx.com
 
-# Repetă pentru nft/, staking/, tournament/
-# Tournament necesită fresh deploy (v2-supernova) — vezi contracts/tournament/src/deploy.md
-# Apoi actualizează frontend/src/config.ts cu adresele primite
+# Repeat for nft/, staking/, marketplace/, tournament/
+# Tournament requires a fresh deploy (v2-supernova) — see contracts/tournament/src/deploy.md
+# Then update frontend/.env.local with the addresses printed by the script
 ```
 
 ---
 
 ## ⛽ Gas Optimization
 
-`attack()` este cel mai apelat endpoint — optimizările de gas au impact direct asupra costului per joc:
+`attack()` is the most-called endpoint — gas savings have a direct impact on cost per match:
 
-| Tehnică | Impact |
+| Technique | Impact |
 |---|---|
-| `SetMapper` pentru `attacked_positions` | `contains()` O(1) vs O(n) pe `VecMapper` |
-| Batch storage writes | O singură scriere finală în loc de multiple updates |
-| Cache storage reads în variabile locale | Evită re-citiri din storage la fiecare acces |
-| `UnorderedSetMapper` când ordinea nu contează | Mai puțin gas per insert |
+| `SetMapper` for `attacked_positions` | `contains()` O(1) vs O(n) on `VecMapper` |
+| Batch storage writes | Single final write instead of multiple updates |
+| Cache storage reads in local variables | Avoids repeated storage reads per access |
+| `UnorderedSetMapper` when order is irrelevant | Less gas per insert |
 
-Vezi detalii complete în [`contracts/battleship/GAS_OPTIMIZATION.md`](contracts/battleship/GAS_OPTIMIZATION.md).
+Full details in [`contracts/battleship/GAS_OPTIMIZATION.md`](contracts/battleship/GAS_OPTIMIZATION.md).
 
 ---
 
 ## 🗺 Roadmap
 
-### ✅ Sprint 1-3 (Completat)
-- [x] Smart contract Battleship (PvP complet, block_nonce timeouts)
-- [x] Smart contract NFT (SFT mint, upgrade, burn, `minted_at_ms`)
-- [x] Smart contract Staking (reward pool, APR configurabil, millis)
-- [x] Smart contract Tournament v2-supernova (`created_at_ms`, `reportMatchResult`)
-- [x] Frontend — toate paginile și hooks
-- [x] Backend NestJS — webhook + WebSocket gateway
-- [x] Docker Compose complet
+### ✅ Sprint 1–3 (Completed)
+- [x] Battleship smart contract (full PvP, block_nonce timeouts)
+- [x] NFT smart contract (SFT mint, upgrade, burn, `minted_at_ms`)
+- [x] Staking smart contract (reward pool, configurable APR, millis)
+- [x] Tournament smart contract v2-supernova (`created_at_ms`, `reportMatchResult`)
+- [x] Frontend — all pages and hooks
+- [x] NestJS backend — webhook + WebSocket gateway
+- [x] Full Docker Compose setup
 - [x] CI/CD GitHub Actions
 - [x] `multiversx-sc = "0.65.1"` (Supernova-ready)
-- [x] Supernova polling intervals (600ms MY_TURN / 1500ms WAITING)
+- [x] Supernova polling intervals (600 ms MY_TURN / 1500 ms WAITING)
 - [x] TypeScript Tournament types (`created_at_ms: bigint`)
 - [x] README + CONTRIBUTING + SECURITY + CHANGELOG
 
-### 🚧 Sprint 4 (În progres)
-- [ ] Deploy devnet + test end-to-end (Supernova parameters)
+### 🚧 Sprint 4 (In progress)
+- [ ] Devnet deploy + end-to-end testing (Supernova parameters)
 - [ ] Tournament fresh deploy (v2-supernova) + smoke tests
-- [ ] Actualizare `TOURNAMENT_CONTRACT_ADDRESS` în `config.ts`
-- [ ] Marketplace UI polish (list/buy flow complet)
-- [ ] Gas optimization `attack()` — measure pre/post cu `mxpy`
-- [ ] TypeScript strict errors — audit complet
+- [ ] Update `VITE_TOURNAMENT_ADDRESS` in `.env.local`
+- [ ] Marketplace UI polish (full list/buy flow)
+- [ ] Gas measurement on `attack()` — pre/post with `mxpy --simulate`
+- [ ] TypeScript strict errors — full audit
 
 ### 🔜 Sprint 5+
 - [ ] AI Bot opponent (single-player)
-- [ ] Video demo 60-90s + GIF în README
+- [ ] 60–90s video demo + GIF in README
 - [ ] Skin system (cosmetic traits)
-- [ ] Global leaderboard on-chain
+- [ ] Global on-chain leaderboard
 - [ ] Mainnet launch
 
 ---
 
-## 🤝 Contribuții
+## 🤝 Contributing
 
-Vezi [CONTRIBUTING.md](CONTRIBUTING.md) pentru ghidul de contribuții.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution guide.
 
-## 🔒 Securitate
+## 🔒 Security
 
-Vezi [SECURITY.md](SECURITY.md) pentru raportarea vulnerabilităților.
+See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 
-## 📄 Licență
+## 📄 License
 
 [MIT](LICENSE) © 2026 MetaShipX
