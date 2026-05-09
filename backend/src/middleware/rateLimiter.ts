@@ -1,46 +1,76 @@
 import { Request, Response, NextFunction } from 'express';
 
-interface RateLimitEntry { count: number; resetAt: number; }
-const store = new Map<string, RateLimitEntry>();
+interface RateLimitEntry {
+  count: number;
+  resetAt: number;
+}
 
-// Clean up old entries every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  store.forEach((v, k) => { if (now > v.resetAt) store.delete(k); });
-}, 5 * 60 * 1000);
+interface RateLimitConfig {
+  windowMs: number;
+  max: number;
+  message?: string;
+}
 
-export function rateLimiter(maxRequests: number, windowMs: number) {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
-      ?? req.socket.remoteAddress
-      ?? 'unknown';
-    const key = `${ip}:${req.path}`;
+/**
+ * Simple in-memory rate limiter (per IP).
+ * For production, swap the store with Redis using ioredis.
+ */
+function createRateLimiter(config: RateLimitConfig) {
+  const store = new Map<string, RateLimitEntry>();
+
+  // Cleanup expired entries every minute
+  setInterval(() => {
     const now = Date.now();
+    for (const [key, entry] of store.entries()) {
+      if (entry.resetAt < now) store.delete(key);
+    }
+  }, 60_000);
 
-    let entry = store.get(key);
-    if (!entry || now > entry.resetAt) {
-      entry = { count: 1, resetAt: now + windowMs };
-      store.set(key, entry);
-    } else {
-      entry.count++;
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
+    const now = Date.now();
+    let entry = store.get(ip);
+
+    if (!entry || entry.resetAt < now) {
+      entry = { count: 0, resetAt: now + config.windowMs };
+      store.set(ip, entry);
     }
 
-    res.setHeader('X-RateLimit-Limit', maxRequests);
-    res.setHeader('X-RateLimit-Remaining', Math.max(0, maxRequests - entry.count));
+    entry.count++;
+
+    res.setHeader('X-RateLimit-Limit', config.max);
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, config.max - entry.count));
     res.setHeader('X-RateLimit-Reset', Math.ceil(entry.resetAt / 1000));
 
-    if (entry.count > maxRequests) {
+    if (entry.count > config.max) {
       res.status(429).json({
-        success: false,
-        error: 'Too many requests',
+        error: 'Too Many Requests',
+        message: config.message ?? 'Rate limit exceeded. Please slow down.',
         retryAfter: Math.ceil((entry.resetAt - now) / 1000),
       });
       return;
     }
+
     next();
   };
 }
 
-// Stricter limiter for write operations
-export const strictLimiter = rateLimiter(20, 60_000);   // 20 req/min
-export const defaultLimiter = rateLimiter(100, 60_000); // 100 req/min
+/** General API rate limiter: 100 req/min per IP */
+export const apiLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 100,
+});
+
+/** Attack endpoint limiter: 1 attack per 2 seconds per IP */
+export const attackLimiter = createRateLimiter({
+  windowMs: 2_000,
+  max: 1,
+  message: 'Attack too fast. Please wait before attacking again.',
+});
+
+/** Game creation limiter: 10 games/min per IP */
+export const gameCreateLimiter = createRateLimiter({
+  windowMs: 60_000,
+  max: 10,
+  message: 'Too many games created. Wait a moment.',
+});
