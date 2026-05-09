@@ -4,6 +4,13 @@
     "main": "src/lib.rs"
   },
   "build": {
-    "rustflags": ["-C", "opt-level=z"]
-  }
+    "rustflags": ["-C", "opt-level=z"],
+    "features": []
+  },
+  "deployTag": "v2-supernova",
+  "_notes": [
+    "v2-supernova: renamed created_at -> created_at_ms (get_block_timestamp_millis).",
+    "Storage layout changed — fresh deploy required, cannot upgrade in-place.",
+    "Run deploy runbook: contracts/tournament/src/deploy.md"
+  ]
 }
