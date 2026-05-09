@@ -16,6 +16,7 @@
  */
 import { Router, Request, Response } from 'express';
 import { confirmAttack } from '../services/game.service';
+import { analyticsService } from '../services/analytics.service';
 
 const router = Router();
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET ?? '';
@@ -24,6 +25,10 @@ router.post('/tx-confirmed', (req: Request, res: Response) => {
   // Optional secret validation
   if (WEBHOOK_SECRET && req.body?.secret !== WEBHOOK_SECRET) {
     res.status(401).json({ error: 'Unauthorized' });
+    analyticsService.track('tx_failed', {
+      reason: 'invalid_webhook_secret',
+      ip: req.ip,
+    });
     return;
   }
 
@@ -37,7 +42,28 @@ router.post('/tx-confirmed', (req: Request, res: Response) => {
     !['hit', 'miss', 'sunk'].includes(result)
   ) {
     res.status(400).json({ error: 'Invalid payload' });
+    analyticsService.track('tx_failed', {
+      reason: 'invalid_payload',
+      body: req.body,
+    });
     return;
+  }
+
+  // ── Track attack analytics ───────────────────────────────────────────────
+  analyticsService.track(
+    'attack_made',
+    {
+      gameId,
+      row,
+      col,
+      result,
+      gameOver: Boolean(gameOver),
+    },
+    attacker
+  );
+
+  if (gameOver && winner) {
+    analyticsService.track('game_won', { gameId, winner }, winner);
   }
 
   confirmAttack({

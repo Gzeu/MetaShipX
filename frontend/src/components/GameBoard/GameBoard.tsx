@@ -1,7 +1,8 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import './GameBoard.css';
 import { BattleFx, CellFx } from '../BattleFx/BattleFx';
 import { useAttackSound } from '../../hooks/useAttackSound';
+import { useGameAnimations } from '../../hooks/useGameAnimations';
 
 export type CellState = 'empty' | 'ship' | 'hit' | 'miss' | 'sunk';
 
@@ -35,6 +36,28 @@ export function GameBoard({
   // ── Sound ──────────────────────────────────────────────────────────────────
   const { MuteButton } = useAttackSound(lastAttack ?? null);
 
+  // ── Particle / cell animations ─────────────────────────────────────────────
+  const { animateCell } = useGameAnimations();
+  const cellRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // Track which attack we've already animated to avoid re-triggering on re-render
+  const lastAnimatedAttack = useRef<string | null>(null);
+
+  // Trigger particle + cell animation whenever lastAttack changes
+  const attackKey = lastAttack
+    ? `${lastAttack.row}-${lastAttack.col}-${lastAttack.result}`
+    : null;
+
+  if (attackKey && attackKey !== lastAnimatedAttack.current && lastAttack) {
+    lastAnimatedAttack.current = attackKey;
+    const idx = lastAttack.row * 10 + lastAttack.col;
+    const el = cellRefs.current[idx];
+    if (el) {
+      // Small rAF delay so the DOM has updated cell state first
+      requestAnimationFrame(() => animateCell(el, lastAttack.result));
+    }
+  }
+
   // ── Overlay FX state ────────────────────────────────────────────────────────
   const [fxKey, setFxKey] = useState(0);
   const showFx =
@@ -42,7 +65,6 @@ export function GameBoard({
     lastAttack !== undefined &&
     lastAttack.isMyAttack;
 
-  // Re-trigger FX each new attack
   const fxResult = lastAttack?.result ?? 'miss';
 
   const getCellClass = useCallback(
@@ -110,6 +132,7 @@ export function GameBoard({
             return (
               <button
                 key={idx}
+                ref={(el) => { cellRefs.current[idx] = el; }}
                 className={getCellClass(idx, state)}
                 onClick={() => handleClick(row, col)}
                 disabled={!interactive || state !== 'empty'}

@@ -8,6 +8,7 @@ import { EnvironmentsEnum }        from '@multiversx/sdk-dapp/out/types/enums.ty
 import App                         from './App';
 import { environment }             from './config';
 import './index.css';
+import './styles/mobile.css';
 
 const env =
   environment.id === 'mainnet' ? EnvironmentsEnum.mainnet
