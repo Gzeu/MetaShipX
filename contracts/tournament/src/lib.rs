@@ -3,6 +3,11 @@
 multiversx_sc::imports!();
 multiversx_sc::derive_imports!();
 
+// ── Supernova-safe constants ─────────────────────────────────────────────────
+// created_at_ms uses get_block_timestamp_millis() — correct at 600 ms cadence.
+// Never use get_block_timestamp() (seconds) — it returns stale/coarse values
+// when multiple blocks share the same wall-clock second.
+
 #[derive(TopEncode, TopDecode, NestedEncode, NestedDecode, TypeAbi, Clone)]
 pub struct Tournament<M: ManagedTypeApi> {
     pub id: u64,
@@ -13,7 +18,10 @@ pub struct Tournament<M: ManagedTypeApi> {
     pub current_players: u32,
     pub status: TournamentStatus,
     pub winner: Option<ManagedAddress<M>>,
-    pub created_at: u64,
+    /// ✅ Supernova: millisecond timestamp (get_block_timestamp_millis).
+    /// Renamed from created_at (seconds) to created_at_ms to prevent silent
+    /// mis-use of the old seconds-based value.
+    pub created_at_ms: u64,
 }
 
 #[derive(TopEncode, TopDecode, NestedEncode, NestedDecode, TypeAbi, Clone, PartialEq)]
@@ -79,6 +87,9 @@ pub trait TournamentContract {
         self.tournament_counter().set(id);
 
         let caller = self.blockchain().get_caller();
+        // ✅ Supernova: milliseconds — correct at 600 ms block cadence
+        let now_ms = self.blockchain().get_block_timestamp_millis();
+
         let tournament = Tournament {
             id,
             name,
@@ -88,7 +99,7 @@ pub trait TournamentContract {
             current_players: 1,
             status: TournamentStatus::Open,
             winner: None,
-            created_at: self.blockchain().get_block_timestamp(),
+            created_at_ms: now_ms,
         };
 
         self.tournaments(id).set(tournament);
@@ -161,6 +172,31 @@ pub trait TournamentContract {
         self.tournaments(tournament_id).set(tournament.clone());
 
         self.tournament_finished_event(tournament_id, &winner, winner_prize);
+    }
+
+    /// Called by the battleship contract after a game in this tournament finishes.
+    /// Callable only by the registered battleship contract.
+    #[endpoint(reportMatchResult)]
+    fn report_match_result(
+        &self,
+        tournament_id: u64,
+        _match_id: u64,
+        winner_address: ManagedAddress,
+    ) {
+        let caller = self.blockchain().get_caller();
+        require!(
+            caller == self.battleship_contract().get(),
+            "Only battleship contract"
+        );
+        require!(
+            !self.tournaments(tournament_id).is_empty(),
+            "Tournament not found"
+        );
+        require!(
+            self.tournament_players(tournament_id).contains(&winner_address),
+            "Winner not a participant"
+        );
+        self.match_result_reported_event(tournament_id, _match_id, &winner_address);
     }
 
     #[only_owner]
@@ -237,6 +273,12 @@ pub trait TournamentContract {
         self.accumulated_fees().get()
     }
 
+    /// ✅ Supernova diagnostic: current block timestamp in milliseconds.
+    #[view(getCurrentTimestampMs)]
+    fn get_current_timestamp_ms(&self) -> u64 {
+        self.blockchain().get_block_timestamp_millis()
+    }
+
     // ============================================================
     // Storage
     // ============================================================
@@ -288,4 +330,12 @@ pub trait TournamentContract {
 
     #[event("withdrawFees")]
     fn withdraw_fees_event(&self, amount: BigUint);
+
+    #[event("matchResultReported")]
+    fn match_result_reported_event(
+        &self,
+        #[indexed] tournament_id: u64,
+        #[indexed] match_id: u64,
+        #[indexed] winner: &ManagedAddress,
+    );
 }
