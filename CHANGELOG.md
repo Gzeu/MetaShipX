@@ -8,12 +8,37 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## [Unreleased]
 
 ### Planned
-- AI Bot opponent (single-player mode)
 - Video demo 60-90s + GIF in README
-- Full devnet E2E test suite (Supernova parameters)
-- Marketplace UI polish (list/buy flow end-to-end)
-- Global leaderboard on-chain
-- Mainnet launch
+- Global leaderboard on-chain contract
+- Referral system (5% from first wager)
+- Spectator betting (EGLD on winner)
+- Mobile PWA / React Native wrapper
+- Mainnet security audit (external)
+
+---
+
+## [0.5.0] — 2026-05-24
+
+### Added
+- **GameModule** (`backend/src/game/game.module.ts`) — wires `BotService` + `PracticeController` into NestJS DI; exports `BotService` for future PvP matchmaking use
+- **Session middleware** (`backend/src/main.ts`) — `express-session` mounted before CORS; powers stateful practice game sessions; cookie `maxAge` 1h, `secure` in production
+- **ThrottlerModule** active (`backend/src/app.module.ts`) — global 3 req/s per IP guard applied via `APP_GUARD`; `GameModule` imported; replaces previously documentation-only rate limiting
+- **Marketplace P2P flow** (`frontend/src/pages/Marketplace/index.tsx`) — new `listings` tab with filter by type + sort by price/level/wins; `listShipForSale`, `buyListing`, `cancelListing` actions; TX state banner (pending/success/error); duplicate-click protection; seller can cancel own listing
+- **`marketplace.service.ts`** (`frontend/src/services/`) — `getActiveListings`, `listShipForSale`, `buyListing`, `cancelListing` using `sendTransactions` + MultiversX API query
+- **Navbar** (`frontend/src/components/Navbar.tsx`) — sticky nav with all routes; `/practice` highlighted in green; wallet connect/disconnect; mobile-responsive at 768px
+- **Marketplace CSS** — complete redesign: TX banner states, rarity colors, P2P listing cards, filter bar, list/buy/cancel buttons, modal polish
+
+### Changed
+- `app.module.ts` — `ThrottlerModule.forRoot` + `GameModule` + `APP_GUARD` ThrottlerGuard added
+- `main.ts` — `express-session` middleware added before CORS
+- `Marketplace/index.tsx` — extended from mint-only to full mint + fleet + P2P marketplace
+
+### Notes for deploy
+1. `npm install express-session @types/express-session` in `backend/`
+2. Add `SESSION_SECRET=<random-32-char>` to `backend/.env.local`
+3. Register `GameModule` is automatic via `app.module.ts` import
+4. Add `/practice` link visible in `Navbar` — no additional routing needed (route already in `App.tsx`)
+5. `marketplace.service.ts` `decodeListingB64` is a stub — replace with full TopDecode once ABI is finalized
 
 ---
 
