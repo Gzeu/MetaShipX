@@ -1,2 +1,2 @@
-// Redirect stub — real implementation is in pages/Home.tsx
+/** @deprecated Use Home.tsx (canonical). */
 export { default } from './Home';

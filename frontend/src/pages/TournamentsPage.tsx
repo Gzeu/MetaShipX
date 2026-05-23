@@ -1,2 +1,2 @@
-// Re-export the existing Tournaments.tsx so App.tsx lazy import works consistently
+/** @deprecated Use Tournaments.tsx (canonical — largest, most complete). */
 export { default } from './Tournaments';

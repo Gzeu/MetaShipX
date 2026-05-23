@@ -1,2 +1,2 @@
-// Redirect stub — real implementation is in pages/StakingPage.tsx
-export { StakingPage as default } from './StakingPage';
+/** @deprecated Use StakingPage.tsx (canonical). */
+export { default } from './StakingPage';
