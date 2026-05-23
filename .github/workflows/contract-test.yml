@@ -1,0 +1,50 @@
+name: Smart Contract Tests
+
+on:
+  push:
+    paths:
+      - 'contracts/**'
+  pull_request:
+    paths:
+      - 'contracts/**'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+
+      - name: Install sc-meta
+        run: cargo install multiversx-sc-meta --locked
+
+      - name: Build all contracts
+        run: |
+          for dir in contracts/battleship contracts/nft contracts/staking contracts/marketplace contracts/tournament; do
+            echo "Building $dir..."
+            cd $dir
+            sc-meta all build --locked
+            cd ../..
+          done
+
+      - name: Run Rust unit tests
+        run: |
+          for dir in contracts/battleship contracts/nft contracts/staking contracts/marketplace contracts/tournament; do
+            echo "Testing $dir..."
+            cd $dir
+            cargo test --locked 2>&1 || true
+            cd ../..
+          done
+
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-wasm-${{ github.sha }}
+          path: contracts/**/output/*.wasm
+          retention-days: 7

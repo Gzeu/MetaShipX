@@ -1,0 +1,34 @@
+# Auto-labeler configuration for MetaShipX
+# Maps file paths to PR labels
+
+smartcontract:
+  - changed-files:
+    - any-glob-to-any-file: 'contracts/**'
+
+frontend:
+  - changed-files:
+    - any-glob-to-any-file: 'frontend/**'
+
+backend:
+  - changed-files:
+    - any-glob-to-any-file: 'backend/**'
+
+tests:
+  - changed-files:
+    - any-glob-to-any-file: 'tests/**'
+
+docs:
+  - changed-files:
+    - any-glob-to-any-file: '*.md'
+    - any-glob-to-any-file: 'docs/**'
+
+ci-cd:
+  - changed-files:
+    - any-glob-to-any-file: '.github/**'
+    - any-glob-to-any-file: 'scripts/**'
+    - any-glob-to-any-file: 'docker-compose.yml'
+    - any-glob-to-any-file: 'Dockerfile*'
+
+wallet:
+  - changed-files:
+    - any-glob-to-any-file: 'wallet/**'

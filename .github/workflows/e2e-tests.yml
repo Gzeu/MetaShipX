@@ -1,0 +1,56 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main, feature/**]
+  pull_request:
+    branches: [main]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        run: cd frontend && npm ci
+
+      - name: Install Playwright deps
+        run: cd frontend && npx playwright install --with-deps chromium
+
+      - name: Build frontend
+        run: cd frontend && npm run build
+        env:
+          VITE_BATTLESHIP_ADDRESS: 'erd1qqqqqqqqqqqqqpgqtest000000000000000000000000000000000001'
+          VITE_NFT_ADDRESS: 'erd1qqqqqqqqqqqqqpgqtest000000000000000000000000000000000002'
+          VITE_STAKING_ADDRESS: 'erd1qqqqqqqqqqqqqpgqtest000000000000000000000000000000000003'
+          VITE_MARKETPLACE_ADDRESS: 'erd1qqqqqqqqqqqqqpgqtest000000000000000000000000000000000004'
+          VITE_TOURNAMENT_ADDRESS: 'erd1qqqqqqqqqqqqqpgqtest000000000000000000000000000000000005'
+
+      - name: Start preview server
+        run: cd frontend && npm run preview &
+        env:
+          PLAYWRIGHT_BASE_URL: 'http://localhost:4173'
+
+      - name: Wait for server
+        run: npx wait-on http://localhost:4173 --timeout 30000
+
+      - name: Run Playwright E2E tests
+        run: npx playwright test tests/e2e/game-flow.spec.ts --config=tests/e2e/playwright.config.ts
+        env:
+          PLAYWRIGHT_BASE_URL: 'http://localhost:4173'
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-${{ github.sha }}
+          path: playwright-report/
+          retention-days: 7
