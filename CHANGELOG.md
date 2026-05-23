@@ -9,11 +9,47 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Planned
 - Video demo 60-90s + GIF in README
-- Global leaderboard on-chain contract
 - Referral system (5% from first wager)
 - Spectator betting (EGLD on winner)
 - Mobile PWA / React Native wrapper
 - Mainnet security audit (external)
+- `battleship` contract: add `setLeaderboardContract` + `updatePlayer` call after game ends
+
+---
+
+## [0.6.0] — 2026-05-24
+
+### Added
+- **Leaderboard contract** (`contracts/leaderboard/`) — on-chain top-50 all-time by wins
+  - `updatePlayer(player, egld_won)` — restricted to battleship contract caller
+  - `getTopPlayers(limit)` — returns sorted `LeaderEntry[]` (wins desc, EGLD tiebreaker)
+  - `getPlayerRank(address)` — returns 1-based rank, 0 if not ranked
+  - `getPlayerStats(address)` — returns (wins, egld_won)
+  - Insertion sort O(50), bounded and gas-safe
+  - `setBattleshipContract` owner-only rotation
+  - Deploy runbook + smoke tests (`contracts/leaderboard/src/deploy.md`)
+- **`marketplace.service.ts`** — replaced `decodeListingB64` stub with real `TopDecode`
+  - Parses `listing_id (u64)` + `seller (32B)` + `token_id (len+bytes)` + `nonce (u64)` + `price (bigint)` + `active (bool)` per contract struct
+  - `getListingById(id)` — fetches single listing via `getListing` view
+  - `getListingCount()` — reads `listing_counter` for iteration bounds
+  - `getActiveListings()` — parallel batch fetch (20 concurrent), filters `active=true`
+  - `listShipForSale(tokenId, nonce, price)` — correct `ESDTNFTTransfer` data encoding
+  - `buyListing(id, priceWei)` — passes raw wei string for exact EGLD match
+  - `cancelListing(id)` — correct hex encoding of listing ID
+- **`contracts/Cargo.toml`** — `leaderboard` added to workspace members + `multiversx-sc-scenario` added to dev-dependencies
+- **`docs/MAINNET_AUDIT_CHECKLIST.md`** — 48-point pre-mainnet security checklist
+  covering all 6 contracts, frontend, backend, infrastructure, pre-launch, and post-launch monitoring
+
+### Fixed
+- `marketplace.service.ts` — `listShipForSale` now passes `tokenId` as parameter (was hardcoded)
+- `marketplace.service.ts` — `buyListing` now passes raw `priceWei` (was EGLD float, caused rounding)
+- `marketplace.service.ts` — `cancelListing` now passes numeric listing ID (was string)
+
+### Notes for deploy
+1. Build leaderboard: `cd contracts/leaderboard && sc-meta all build --release`
+2. Deploy leaderboard: `./scripts/mainnet-deploy.sh` (already includes leaderboard in deploy order)
+3. Wire battleship → leaderboard: add `setLeaderboardContract` endpoint to battleship contract (see [Unreleased])
+4. No frontend changes needed — `Leaderboard.tsx` already queries backend which can be updated to call `getTopPlayers`
 
 ---
 
@@ -36,9 +72,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ### Notes for deploy
 1. `npm install express-session @types/express-session` in `backend/`
 2. Add `SESSION_SECRET=<random-32-char>` to `backend/.env.local`
-3. Register `GameModule` is automatic via `app.module.ts` import
-4. Add `/practice` link visible in `Navbar` — no additional routing needed (route already in `App.tsx`)
-5. `marketplace.service.ts` `decodeListingB64` is a stub — replace with full TopDecode once ABI is finalized
 
 ---
 
@@ -47,80 +80,41 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ### Added
 - **Tournament contract v2-supernova** — `reportMatchResult` endpoint callable
   only by battleship contract; `matchResultReported` event; `getCurrentTimestampMs`
-  diagnostic view ([`lib.rs`](contracts/tournament/src/lib.rs))
-- **Tournament deploy runbook** — full `sc-meta build` + `mxpy deploy` + smoke
-  test steps, rollback strategy ([`deploy.md`](contracts/tournament/src/deploy.md))
-- **TypeScript Tournament types** — `Tournament` interface with `created_at_ms: bigint`,
-  `TournamentStatus` union, `createTournament()`, `joinTournament()`,
-  `getTournament()`, `getActiveTournaments()` service methods
-  ([`battleship.service.ts`](frontend/src/services/battleship.service.ts))
-- **`GameState.phase`** typed field (`GamePhase` union) alongside deprecated `status`
-- **`decodeTournament()`** — manual TopEncode decoder for tournament struct
+  diagnostic view
+- **Tournament deploy runbook** — full `sc-meta build` + `mxpy deploy` + smoke test steps
+- **TypeScript Tournament types** — `Tournament` interface with `created_at_ms: bigint`
+- **`GameState.phase`** typed field (`GamePhase` union)
 - **Gas optimization documentation** for `attack()` contract
-  ([`GAS_OPTIMIZATION.md`](contracts/battleship/GAS_OPTIMIZATION.md))
 
 ### Changed
-- **`tournament/src/lib.rs`** — `created_at` (raw seconds) → `created_at_ms`
-  (`get_block_timestamp_millis()`); struct field rename for Supernova correctness
-- **`useGamePolling.ts`** — Supernova-tuned intervals:
-  - `MY_TURN`: 2 000 ms → **600 ms** (1 block)
-  - `WAITING`: 5 000 ms → **1 500 ms** (~2.5 blocks)
-  - Back-off cap: 30 000 ms → **10 000 ms**
-- **`pollAttackResult`** polling interval: 1 200 ms → **600 ms**
-- **`multiversx.json`** — `deployTag: v2-supernova`; added `_notes` about
-  storage layout change requiring fresh deploy
-- **`sendTx`** — accepts optional `receiver` param; `sendTournamentTx` helper
-  routes calls to `TOURNAMENT_CONTRACT_ADDRESS`
-- **`queryContract`** — accepts optional `contract` param; `queryTournament` helper
+- `tournament/src/lib.rs` — `created_at` → `created_at_ms` (`get_block_timestamp_millis()`)
+- `useGamePolling.ts` — Supernova-tuned intervals: MY_TURN 600ms, WAITING 1500ms
+- `multiversx.json` — `deployTag: v2-supernova`
 
 ### Security
 - `reportMatchResult` restricted to `battleship_contract` caller only
-- `ThrottlerModule` rate-limiting recommendations documented (3 req/s per IP
-  on short window, max 1 attack/2s per player)
-- Commit-reveal hash verification documented in security review
-
-### Infrastructure
-- `contracts/tournament/src/deploy.md` — fresh deploy required (v1→v2 migration)
-- Smoke test commands included to verify `getCurrentTimestampMs` on devnet
-
----
-
-## [0.3.1] — 2026-05-08
-
-### Updated
-- README roadmap expanded with marketplace, spectators, sounds, skins
-- Project vision updated to include cosmetics and immersive battle presentation
+- Commit-reveal hash verification documented
 
 ---
 
 ## [0.3.0] — 2026-05-07
 
 ### Added
-- Staking contract (`contracts/staking/`) — `get_block_timestamp_millis()`,
-  `MILLIS_PER_YEAR`, `MIN_ELAPSED_MS = 600` (Supernova-ready from day one)
-- NFT contract (`contracts/nft/`) — `minted_at_ms` with `get_block_timestamp_millis()`
-- Battleship contract — `TURN_TIMEOUT_BLOCKS = 3_000`, all time logic via
-  `get_block_nonce()` (no raw timestamp usage)
-- Backend NestJS — webhook controller, WebSocket events gateway, PostgreSQL
-- Frontend — all pages, hooks, services, board utilities
-- Docker Compose, CI/CD GitHub Actions
-- `multiversx-sc = "0.65.1"` workspace (≫ 0.63.0 Supernova requirement)
+- Staking, NFT, Battleship contracts — Supernova-ready
+- Backend NestJS — webhook, WebSocket, PostgreSQL
+- Frontend — all pages, hooks, services
+- Docker Compose, CI/CD
 
 ---
 
 ## [0.2.0] — 2026-05-01
 
 ### Added
-- React 18 + Vite frontend scaffolding
-- `sdk-dapp` v5 wallet integration (xPortal, Web Wallet, Ledger, WalletConnect)
-- Game board utilities (`board.ts`)
-- Initial routing (Home, Lobby, Game, Staking, Marketplace, Tournaments)
+- React 18 + Vite frontend, sdk-dapp v5
 
 ---
 
 ## [0.1.0] — 2026-04-25
 
 ### Added
-- Repository initialized
-- Battleship PvP smart contract (Rust, MultiversX framework)
-- Initial README and project structure
+- Repository initialized, Battleship PvP smart contract

@@ -1,0 +1,20 @@
+[package]
+name = "leaderboard-wasm"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies.leaderboard]
+path = ".."
+
+[dependencies.multiversx-sc-wasm-adapter]
+workspace = true
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true

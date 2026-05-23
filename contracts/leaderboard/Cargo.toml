@@ -1,0 +1,18 @@
+[package]
+name = "leaderboard"
+version = "0.0.1"
+edition = "2021"
+authors = ["MetaShipX"]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies.multiversx-sc]
+workspace = true
+
+[[bin]]
+name = "leaderboard_wasm"
+path = "src/lib.rs"
+
+[dev-dependencies.multiversx-sc-scenario]
+workspace = true

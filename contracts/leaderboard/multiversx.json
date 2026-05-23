@@ -1,0 +1,9 @@
+{
+  "language": "rust",
+  "settings": {
+    "packageName": "leaderboard",
+    "outputPath": "output",
+    "deployTag": "v1"
+  },
+  "_notes": "Deploy AFTER battleship contract. Pass battleship address as init arg."
+}
