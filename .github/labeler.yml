@@ -1,0 +1,27 @@
+smart-contract:
+  - changed-files:
+    - any-glob-to-any-file: 'contracts/**'
+
+frontend:
+  - changed-files:
+    - any-glob-to-any-file: 'frontend/**'
+
+backend:
+  - changed-files:
+    - any-glob-to-any-file: 'backend/**'
+
+tests:
+  - changed-files:
+    - any-glob-to-any-file: 'tests/**'
+
+ci:
+  - changed-files:
+    - any-glob-to-any-file: '.github/**'
+
+scripts:
+  - changed-files:
+    - any-glob-to-any-file: 'scripts/**'
+
+docs:
+  - changed-files:
+    - any-glob-to-any-file: ['*.md', 'docs/**']
