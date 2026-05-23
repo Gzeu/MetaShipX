@@ -1,2 +1,2 @@
-// Re-export the existing Profile.tsx so App.tsx lazy import works consistently
+/** @deprecated Use Profile.tsx (canonical). */
 export { default } from './Profile';

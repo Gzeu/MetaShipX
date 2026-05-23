@@ -1,0 +1,66 @@
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  height: 56px;
+  background: #0d1117;
+  border-bottom: 1px solid #21262d;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.navbar-brand {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #58a6ff;
+  text-decoration: none;
+  letter-spacing: -0.5px;
+}
+
+.navbar-links {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.nav-link {
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  color: #8b949e;
+  text-decoration: none;
+  font-size: 0.875rem;
+  transition: color 0.15s, background 0.15s;
+}
+
+.nav-link:hover { color: #e6edf3; background: #161b22; }
+.nav-link.active { color: #e6edf3; background: #21262d; }
+
+.nav-link--highlight {
+  color: #3fb950;
+  font-weight: 600;
+}
+.nav-link--highlight:hover { color: #56d364; }
+.nav-link--highlight.active { color: #56d364; background: #0d2a14; }
+
+.navbar-wallet { display: flex; align-items: center; }
+
+.btn-wallet {
+  padding: 0.35rem 1rem;
+  border-radius: 6px;
+  background: #21262d;
+  color: #58a6ff;
+  text-decoration: none;
+  font-size: 0.85rem;
+  border: 1px solid #30363d;
+  transition: background 0.15s;
+}
+.btn-wallet:hover { background: #30363d; }
+.btn-wallet--connected { color: #3fb950; border-color: #238636; }
+
+@media (max-width: 768px) {
+  .navbar-links { gap: 0; }
+  .nav-link { padding: 0.3rem 0.5rem; font-size: 0.8rem; }
+  .navbar-brand { font-size: 1rem; }
+}

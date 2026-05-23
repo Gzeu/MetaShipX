@@ -1,168 +1,107 @@
-/**
- * Marketplace service — real on-chain transactions via sdk-dapp.
- *
- * listShip  → ESDTNFTTransfer (send SFT to marketplace contract)
- * buyShip   → EGLD payment call to marketplace contract
- * cancelListing → simple SC call
- * getListings   → view query on marketplace contract
- */
+import { Address, ContractFunction, ResultsParser, SmartContract } from '@multiversx/sdk-core';
 import { sendTransactions } from '@multiversx/sdk-dapp/services';
-import { refreshAccount }   from '@multiversx/sdk-dapp/utils';
-import { ProxyNetworkProvider } from '@multiversx/sdk-network-providers';
-import { Address } from '@multiversx/sdk-core';
-import {
-  MARKETPLACE_CONTRACT_ADDRESS,
-  NFT_COLLECTION_ID,
-  NETWORK_PROVIDER_URL,
-} from '../config';
-import type { MarketplaceListing, CreateListingParams, BuyListingParams } from '../types/marketplace';
+import { CONTRACTS } from '../config';
 
-const provider = new ProxyNetworkProvider(NETWORK_PROVIDER_URL);
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function hex8(n: number) { return n.toString(16).padStart(8, '0'); }
-function hex16(n: bigint) { return n.toString(16).padStart(16, '0'); }
-function egldWei(egld: string): string {
-  return String(BigInt(Math.round(parseFloat(egld) * 1e18)));
-}
-/** Encode string to hex */
-function strHex(s: string) {
-  return Buffer.from(s).toString('hex');
+export interface MarketListing {
+  listingId: string;
+  seller: string;
+  nonce: number;
+  shipType: string;
+  shipName: string;
+  level: number;
+  wins: number;
+  priceEgld: string;
 }
 
-async function sendTx(
-  receiver: string,
-  data: string,
-  valueEgld = '0',
-  gasLimit = 10_000_000
-) {
-  await refreshAccount();
-  const { sessionId } = await sendTransactions({
-    transactions: [{ receiver, value: egldWei(valueEgld), data, gasLimit }],
+/**
+ * Fetch all active P2P listings from the marketplace contract.
+ * Falls back to empty array on error (devnet may have no listings).
+ */
+export async function getActiveListings(): Promise<MarketListing[]> {
+  try {
+    const addr = CONTRACTS.MARKETPLACE_ADDRESS;
+    if (!addr) return [];
+    const response = await fetch(
+      `${import.meta.env.VITE_MX_API || 'https://devnet-api.multiversx.com'}/vm-values/query`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scAddress: addr,
+          funcName: 'getActiveListings',
+          args: [],
+        }),
+      }
+    );
+    const json = await response.json();
+    const rawList: string[] = json?.data?.data?.returnData ?? [];
+    return rawList.map((b64, idx) => decodeListingB64(b64, idx));
+  } catch {
+    return [];
+  }
+}
+
+function decodeListingB64(b64: string, idx: number): MarketListing {
+  // Minimal stub decode — replace with proper TopDecode when ABI types are stable
+  // Real decode parses: seller(32 bytes) + nonce(8) + shipType(1) + name(len+bytes) + level(1) + wins(4) + price(bigint)
+  return {
+    listingId: `listing-${idx}`,
+    seller: '0x0000000000000000000000000000000000000000',
+    nonce: idx + 1,
+    shipType: 'Destroyer',
+    shipName: `Ship #${idx + 1}`,
+    level: 1,
+    wins: 0,
+    priceEgld: '0.1',
+  };
+}
+
+export async function listShipForSale(nonce: number, priceEgld: string): Promise<void> {
+  const priceWei = BigInt(Math.round(parseFloat(priceEgld) * 1e18)).toString();
+  await sendTransactions({
+    transactions: [{
+      receiver: CONTRACTS.MARKETPLACE_ADDRESS,
+      data: `ESDTNFTTransfer@${nonce.toString(16).padStart(16,'0')}@01@listShip@${priceWei}`,
+      gasLimit: 10_000_000,
+    }],
     transactionsDisplayInfo: {
-      processingMessage: 'Processing marketplace tx…',
-      errorMessage: 'Transaction failed',
-      successMessage: 'Transaction successful',
+      processingMessage: 'Listing ship...',
+      errorMessage: 'Listing failed',
+      successMessage: 'Ship listed!',
     },
   });
-  return sessionId as string;
 }
 
-async function queryContract(func: string, args: string[] = []) {
-  return provider.queryContract({
-    address: new Address(MARKETPLACE_CONTRACT_ADDRESS),
-    func,
-    args,
-    value: BigInt(0),
-  } as any);
+export async function buyListing(listingId: string, priceEgld: string): Promise<void> {
+  const priceWei = BigInt(Math.round(parseFloat(priceEgld) * 1e18)).toString();
+  const listingHex = Buffer.from(listingId).toString('hex');
+  await sendTransactions({
+    transactions: [{
+      receiver: CONTRACTS.MARKETPLACE_ADDRESS,
+      value: priceWei,
+      data: `buyShip@${listingHex}`,
+      gasLimit: 15_000_000,
+    }],
+    transactionsDisplayInfo: {
+      processingMessage: 'Buying ship...',
+      errorMessage: 'Purchase failed',
+      successMessage: 'Ship purchased!',
+    },
+  });
 }
 
-// ─── Service ──────────────────────────────────────────────────────────────────
-
-export class MarketplaceService {
-  /**
-   * Read all active listings from the contract view.
-   */
-  async getListings(): Promise<MarketplaceListing[]> {
-    try {
-      const res = await queryContract('getAllListings');
-      return (res.returnData ?? []).map((raw: string) => {
-        // Each returnData entry is base64-encoded ABI-packed listing
-        const buf = Buffer.from(raw, 'base64');
-        // Minimal decode: first 8 bytes = listingId (u64), next 32 = seller, etc.
-        // Full decode should use ABI codec — this is a lightweight version.
-        const listingId = buf.readBigUInt64BE(0).toString();
-        return {
-          listingId,
-          seller: 'erd1' + buf.slice(8, 40).toString('hex'),
-          shipNonce: buf.readUInt32BE(40),
-          shipType: 'Unknown',
-          shipName: 'Ship #' + buf.readUInt32BE(40),
-          level: buf[44] ?? 1,
-          wins: buf[45] ?? 0,
-          price: buf.readBigUInt64BE(46).toString(),
-          skin: undefined,
-          active: true,
-          createdAt: Math.floor(Date.now() / 1000),
-        } as MarketplaceListing;
-      });
-    } catch {
-      return [];
-    }
-  }
-
-  /**
-   * List a ship for sale.
-   *
-   * MultiversX pattern: ESDTNFTTransfer @collection @nonce @quantity @dest @method @args
-   * Sender calls this on SELF (receiver = sender address), with dest = marketplace contract.
-   *
-   * Caller must pass their own address as `sellerAddress`.
-   */
-  async createListing(params: CreateListingParams & { sellerAddress: string }): Promise<{ sessionId: string }> {
-    const { nonce, price, sellerAddress } = params;
-
-    // ESDTNFTTransfer data field:
-    // ESDTNFTTransfer @ collection_hex @ nonce_hex @ quantity_hex @ dest_hex @ method_hex @ price_arg
-    const collectionHex = strHex(NFT_COLLECTION_ID);
-    const nonceHex = nonce.toString(16).padStart(16, '0');
-    const quantityHex = '0000000000000001'; // 1 SFT
-    const destHex = Buffer.from(
-      new Address(MARKETPLACE_CONTRACT_ADDRESS).pubkey()
-    ).toString('hex');
-    const methodHex = strHex('listShip');
-    // price in wei as arg
-    const priceWei = BigInt(Math.round(parseFloat(price) * 1e18));
-    const priceHex = hex16(priceWei);
-
-    const data = [
-      'ESDTNFTTransfer',
-      collectionHex,
-      nonceHex,
-      quantityHex,
-      destHex,
-      methodHex,
-      priceHex,
-    ].join('@');
-
-    // For ESDTNFTTransfer the receiver must be the sender itself
-    const sessionId = await sendTx(sellerAddress, data, '0', 15_000_000);
-    return { sessionId };
-  }
-
-  /**
-   * Buy a listed ship by sending exact EGLD to the marketplace contract.
-   */
-  async buyListing(params: BuyListingParams): Promise<{ sessionId: string }> {
-    const { listingId, price } = params;
-
-    // Convert listingId to u64 hex
-    const listingIdHex = hex8(parseInt(listingId, 10));
-    const data = `buyShip@${listingIdHex}`;
-
-    // Convert price from wei string to EGLD float
-    const priceEgld = (BigInt(price) / BigInt(1e15)).toString();
-    const priceEgldFloat = (Number(priceEgld) / 1000).toFixed(18);
-
-    const sessionId = await sendTx(
-      MARKETPLACE_CONTRACT_ADDRESS,
-      data,
-      priceEgldFloat,
-      15_000_000
-    );
-    return { sessionId };
-  }
-
-  /**
-   * Cancel a listing — returns SFT to the seller.
-   */
-  async cancelListing(listingId: string): Promise<{ sessionId: string }> {
-    const listingIdHex = hex8(parseInt(listingId, 10));
-    const data = `cancelListing@${listingIdHex}`;
-    const sessionId = await sendTx(MARKETPLACE_CONTRACT_ADDRESS, data, '0', 10_000_000);
-    return { sessionId };
-  }
+export async function cancelListing(listingId: string): Promise<void> {
+  const listingHex = Buffer.from(listingId).toString('hex');
+  await sendTransactions({
+    transactions: [{
+      receiver: CONTRACTS.MARKETPLACE_ADDRESS,
+      data: `cancelListing@${listingHex}`,
+      gasLimit: 8_000_000,
+    }],
+    transactionsDisplayInfo: {
+      processingMessage: 'Cancelling listing...',
+      errorMessage: 'Cancel failed',
+      successMessage: 'Listing cancelled.',
+    },
+  });
 }
-
-export const marketplaceService = new MarketplaceService();

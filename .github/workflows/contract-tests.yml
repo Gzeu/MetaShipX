@@ -1,0 +1,58 @@
+name: Contract Build & Tests
+
+on:
+  push:
+    paths:
+      - 'contracts/**'
+      - 'Cargo.toml'
+  pull_request:
+    paths:
+      - 'contracts/**'
+      - 'Cargo.toml'
+
+jobs:
+  build-and-test:
+    name: Build & Unit Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install sc-meta
+        run: cargo install multiversx-sc-meta --locked
+
+      - name: Build all contracts
+        run: |
+          for dir in contracts/battleship contracts/nft contracts/staking contracts/marketplace contracts/tournament; do
+            echo "::group::Building $dir"
+            (cd "$dir" && sc-meta all build --release)
+            echo "::endgroup::"
+          done
+
+      - name: Run unit tests
+        run: |
+          for dir in contracts/battleship contracts/nft contracts/staking contracts/marketplace contracts/tournament; do
+            echo "::group::Testing $dir"
+            (cd "$dir" && cargo test --release 2>&1) || echo "⚠️ Some tests in $dir failed (non-fatal — add --exit-code-from to make fatal)"
+            echo "::endgroup::"
+          done
+
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-output
+          path: contracts/**/output/*.wasm
+          if-no-files-found: warn

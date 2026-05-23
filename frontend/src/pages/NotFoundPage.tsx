@@ -1,2 +1,2 @@
-// Re-export the existing NotFound.tsx so App.tsx lazy import works consistently
+/** @deprecated Use NotFound.tsx (canonical). */
 export { default } from './NotFound';

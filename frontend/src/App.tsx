@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { DappProvider } from '@multiversx/sdk-dapp/wrappers';
 import { NotificationModal } from '@multiversx/sdk-dapp/UI/NotificationModal';
@@ -6,16 +6,20 @@ import { SignTransactionsModals } from '@multiversx/sdk-dapp/UI/SignTransactions
 import { TransactionsToastList } from '@multiversx/sdk-dapp/UI/TransactionsToastList';
 
 import Navbar from './components/Navbar/Navbar';
-import Home from './pages/Home';
-import Leaderboard from './pages/Leaderboard';
-import Marketplace from './pages/Marketplace';
-import Profile from './pages/Profile';
-import Tournaments from './pages/Tournaments';
-import { GamePage } from './pages/GamePage/GamePage';
-import { LobbyPage } from './pages/LobbyPage/LobbyPage';
-import { StakingPage } from './pages/StakingPage';
-import { SpectatorPage } from './pages/SpectatorPage';
-import NotFound from './pages/NotFound';
+
+// ── Canonical lazy imports — one source of truth for all routes ──────────────
+const Home        = lazy(() => import('./pages/Home'));
+const Leaderboard = lazy(() => import('./pages/Leaderboard'));
+const Marketplace = lazy(() => import('./pages/Marketplace'));
+const Profile     = lazy(() => import('./pages/Profile'));
+const Tournaments = lazy(() => import('./pages/Tournaments'));
+const NotFound    = lazy(() => import('./pages/NotFound'));
+const PracticePage = lazy(() => import('./pages/PracticePage'));
+// Folder-based pages (contain index.tsx)
+const GamePage     = lazy(() => import('./pages/Game').then(m => ({ default: m.GamePage ?? m.default })));
+const LobbyPage    = lazy(() => import('./pages/LobbyPage').then(m => ({ default: m.LobbyPage ?? m.default })));
+const StakingPage  = lazy(() => import('./pages/StakingPage').then(m => ({ default: m.StakingPage ?? m.default })));
+const SpectatorPage = lazy(() => import('./pages/SpectatorPage').then(m => ({ default: m.SpectatorPage ?? m.default })));
 
 const ENVIRONMENT = (import.meta.env.VITE_ENV as 'devnet' | 'testnet' | 'mainnet') || 'devnet';
 
@@ -47,20 +51,24 @@ export default function App() {
         <NotificationModal />
         <SignTransactionsModals />
 
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/lobby" element={<LobbyPage />} />
-          <Route path="/game/:gameId" element={<GamePage />} />
-          <Route path="/spectate/:gameId" element={<SpectatorPage />} />
-          <Route path="/leaderboard" element={<Leaderboard />} />
-          <Route path="/marketplace" element={<Marketplace />} />
-          <Route path="/staking" element={<StakingPage />} />
-          <Route path="/tournaments" element={<Tournaments />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/profile/:address" element={<Profile />} />
-          <Route path="/404" element={<NotFound />} />
-          <Route path="*" element={<Navigate to="/404" replace />} />
-        </Routes>
+        <Suspense fallback={<div className="page-loading">Loading…</div>}>
+          <Routes>
+            <Route path="/"                  element={<Home />} />
+            <Route path="/lobby"             element={<LobbyPage />} />
+            <Route path="/game/:gameId"      element={<GamePage />} />
+            <Route path="/spectate/:gameId" element={<SpectatorPage />} />
+            <Route path="/leaderboard"       element={<Leaderboard />} />
+            <Route path="/marketplace"       element={<Marketplace />} />
+            <Route path="/staking"           element={<StakingPage />} />
+            <Route path="/tournaments"       element={<Tournaments />} />
+            <Route path="/profile"           element={<Profile />} />
+            <Route path="/profile/:address" element={<Profile />} />
+            {/* Practice mode — no wallet, no EGLD, no on-chain tx */}
+            <Route path="/practice"          element={<PracticePage />} />
+            <Route path="/404"               element={<NotFound />} />
+            <Route path="*"                  element={<Navigate to="/404" replace />} />
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </DappProvider>
   );
