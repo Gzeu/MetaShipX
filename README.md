@@ -1,8 +1,10 @@
 # ⚓ MetaShipX
 
-> **Battleship. On-Chain.** — Multiplayer naval strategy game on MultiversX with NFT ships, EGLD wagering, staking rewards, tournaments, secondary marketplace, spectator mode, cosmetic skins, and immersive combat FX.
+> **Battleship. On-Chain.** — Multiplayer naval strategy game on MultiversX with NFT ships, EGLD wagering, staking rewards, tournaments, secondary marketplace, spectator mode, AI practice bot, and on-chain leaderboard.
 
 [![Build](https://github.com/Gzeu/MetaShipX/actions/workflows/ci.yml/badge.svg)](https://github.com/Gzeu/MetaShipX/actions)
+[![E2E Tests](https://github.com/Gzeu/MetaShipX/actions/workflows/e2e-tests.yml/badge.svg)](https://github.com/Gzeu/MetaShipX/actions)
+[![Contract Tests](https://github.com/Gzeu/MetaShipX/actions/workflows/contract-tests.yml/badge.svg)](https://github.com/Gzeu/MetaShipX/actions)
 [![MultiversX](https://img.shields.io/badge/MultiversX-Devnet-blue)](https://devnet.multiversx.com)
 [![Supernova](https://img.shields.io/badge/Supernova-600ms_blocks-brightgreen)](https://docs.multiversx.com)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react)](https://react.dev)
@@ -17,7 +19,7 @@
 
 ## 🎮 What is MetaShipX?
 
-Two players battle on a **10×10 grid**, each commanding a fleet of **NFT ships**. Every move is a blockchain transaction. The winner takes the combined EGLD wager. Match fees automatically fund a **staking reward pool**. Players can **list and buy ships on the marketplace**, unlock **cosmetic skins**, and let other users **watch live matches** with hit/miss sounds and animations.
+Two players battle on a **10×10 grid**, each commanding a fleet of **NFT ships**. Every move is a blockchain transaction. The winner takes the combined EGLD wager. Match fees automatically fund a **staking reward pool**. Players can **list and buy ships on the marketplace**, unlock **cosmetic skins**, let other users **watch live matches** with hit/miss sounds and animations, and compete on the **on-chain leaderboard**. New players can jump in immediately with **AI Practice Mode** — no wallet, no EGLD required.
 
 **Stack:** Rust smart contracts · React 18 + Vite · TypeScript · Chakra UI · `@multiversx/sdk-dapp` v5 · NestJS backend · WebSocket real-time · PostgreSQL · Docker
 
@@ -31,7 +33,9 @@ Two players battle on a **10×10 grid**, each commanding a fleet of **NFT ships*
 | **NFT Fleet** | Mint SFT ships, upgrade level 1–10, win tracking |
 | **Staking** | 20% APR, reward pool funded by match fees |
 | **Tournaments** | Elimination bracket with EGLD prizes |
-| **Marketplace** | List and buy NFT ships between players |
+| **Marketplace** | 3-tab P2P: Shop · My Fleet · P2P Market (list/buy/cancel) |
+| **Leaderboard** | On-chain top-50 all-time by wins + EGLD earned |
+| **AI Practice Bot** | 3 difficulties — no wallet, no EGLD, instant onboarding |
 | **Spectator Mode** | Live read-only watch via real-time WebSocket |
 | **Cosmetics** | Ship skins/traits for visual customisation |
 | **Immersion** | Sound effects + hit/miss/sunk/game-over animations |
@@ -42,22 +46,23 @@ Two players battle on a **10×10 grid**, each commanding a fleet of **NFT ships*
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         FRONTEND (React 18 + Vite)              │
+│                   FRONTEND (React 18 + Vite)                    │
 │  Home · Lobby · Game · Spectator · Staking · Marketplace        │
-│  Tournaments · Leaderboard · Profile                            │
+│  Tournaments · Leaderboard · Profile · Practice (AI Bot)        │
 │  sdk-dapp (xPortal / Web Wallet / Ledger / WalletConnect)       │
 └────────────┬───────────────────────────────┬────────────────────┘
              │  REST + WebSocket             │ MultiversX API
              ▼                               ▼
-┌────────────────────────┐    ┌─────────────────────────────────┐
-│  BACKEND (NestJS)      │    │  SMART CONTRACTS (Rust)         │
-│  WebhookController     │    │                                 │
-│  EventsGateway (WS)    │    │  contracts/battleship/          │
-│  PostgreSQL (TypeORM)  │    │  contracts/nft/                 │
-│  mx-notifier listener  │    │  contracts/staking/             │
-└────────────────────────┘    │  contracts/marketplace/         │
-                              │  contracts/tournament/          │
-                              └─────────────────────────────────┘
+┌────────────────────────┐    ┌──────────────────────────────────────┐
+│  BACKEND (NestJS)      │    │  SMART CONTRACTS (Rust)              │
+│  WebhookController     │    │                                      │
+│  EventsGateway (WS)    │    │  contracts/battleship/               │
+│  BotService (AI)       │    │  contracts/nft/                      │
+│  PracticeController    │    │  contracts/staking/                  │
+│  ThrottlerGuard        │    │  contracts/marketplace/              │
+│  PostgreSQL (TypeORM)  │    │  contracts/tournament/               │
+│  express-session       │    │  contracts/leaderboard/  ← NEW v0.6  │
+└────────────────────────┘    └──────────────────────────────────────┘
 ```
 
 ---
@@ -73,10 +78,12 @@ Two players battle on a **10×10 grid**, each commanding a fleet of **NFT ships*
 | `placeShips(gameId, positions)` | Submit the ship-placement hash (commit-reveal) |
 | `attack(gameId, row, col)` | Execute an attack (turn-based) — most-called endpoint |
 | `withdraw(gameId)` | Reclaim wager if opponent times out (3 000 blocks) |
+| `setLeaderboardContract(addr)` | Owner: wire leaderboard (fire-and-forget notify on win) |
+| `getLeaderboardContract` | Returns leaderboard address, or zero if not set |
 | `getGameState(gameId)` | Return the full game state |
 | `getPlayerGames(address)` | List all games for a player |
 
-> **Gas optimization:** `attack()` uses `SetMapper` for `O(1)` contains checks and batches all storage writes into a single final write. See [`GAS_OPTIMIZATION.md`](contracts/battleship/GAS_OPTIMIZATION.md).
+> **Gas optimization:** `attack()` uses `SetMapper` for `O(1)` contains checks and batches all storage writes into a single final write. Leaderboard notify uses `transfer_execute` (fire-and-forget, 12M gas) — failure does **not** revert the game. See [`GAS_OPTIMIZATION.md`](contracts/battleship/GAS_OPTIMIZATION.md).
 
 ### NFT Ships (`contracts/nft/`)
 
@@ -113,6 +120,16 @@ Two players battle on a **10×10 grid**, each commanding a fleet of **NFT ships*
 | `getTotalStaked` | Total EGLD locked in the contract |
 | `getRewardPool` | Available balance for rewards |
 
+### Marketplace (`contracts/marketplace/`)
+
+| Endpoint | Description |
+|---|---|
+| `listShip(tokenId, nonce, price)` | List an NFT ship for sale (ESDTNFTTransfer) |
+| `buyShip(listingId)` | Buy a listed ship (exact EGLD payment) |
+| `cancelListing(listingId)` | Seller cancels and reclaims ship |
+| `getListing(listingId)` | Returns full listing struct |
+| `getActiveListings` | All active listings (frontend batches 20 concurrent) |
+
 ### Tournament (`contracts/tournament/`) — v2-supernova
 
 | Endpoint | Description |
@@ -122,11 +139,38 @@ Two players battle on a **10×10 grid**, each commanding a fleet of **NFT ships*
 | `declareTournamentWinner(id, winner)` | Admin declares the winner |
 | `reportMatchResult(tournamentId, matchId, winner)` | Called by the battleship contract |
 | `cancelTournament(id)` | Cancel and refund all players |
-| `getTournament(id)` | Return the full tournament struct (with `created_at_ms` in ms) |
+| `getTournament(id)` | Return full tournament struct (`created_at_ms` in ms) |
 | `getCurrentTimestampMs` | Diagnostic: current timestamp in milliseconds |
 
-> **v2-supernova:** `created_at_ms` uses `get_block_timestamp_millis()` — correct at 600 ms blocks.
-> A fresh deploy is required compared to v1. See [`deploy.md`](contracts/tournament/src/deploy.md).
+> **v2-supernova:** `created_at_ms` uses `get_block_timestamp_millis()` — correct at 600 ms blocks. Fresh deploy required vs v1.
+
+### Leaderboard (`contracts/leaderboard/`) — NEW v0.6.0
+
+| Endpoint | Description |
+|---|---|
+| `updatePlayer(player, egld_won)` | Record win — restricted to battleship contract caller |
+| `getTopPlayers(limit)` | Returns sorted `LeaderEntry[]` (wins desc, EGLD tiebreaker) |
+| `getPlayerRank(address)` | 1-based rank, 0 if not in top-50 |
+| `getPlayerStats(address)` | Returns `(wins, egld_won)` tuple |
+| `setBattleshipContract(addr)` | Owner: rotate authorized caller |
+
+> **Design:** Insertion sort O(50) bounded array — gas-safe, predictable cost regardless of total player count. Battleship wires via `setLeaderboardContract` post-deploy; failure of leaderboard call does NOT revert the game.
+
+---
+
+## 🤖 AI Practice Mode
+
+No wallet. No EGLD. No on-chain transactions. Three difficulty levels, accessible from the `/practice` route:
+
+| Difficulty | Algorithm |
+|---|---|
+| Easy | Random non-repeated shots |
+| Medium | Hunt/Target — attacks neighbors after a hit |
+| Hard | Probability density map with center weighting + neighbor boost |
+
+Backend: `BotService` (NestJS injectable) + `PracticeController` (REST: `/practice/start`, `/practice/place`, `/practice/attack`). Session-based state, rate-limited (2 attacks/s).
+
+Frontend: `PracticePage` — difficulty selector, 10×10 placement board, 10×10 attack board, win/lose screen with **"vs Real Opponent"** CTA to convert to PvP.
 
 ---
 
@@ -141,10 +185,11 @@ Two players battle on a **10×10 grid**, each commanding a fleet of **NFT ships*
 | `GamePage` | `/game/:id` | 10×10 board, attacks, turn timer |
 | `SpectatorPage` | `/spectate/:id` | Live read-only watch |
 | `StakingPage` | `/staking` | Stake / Unstake / Claim rewards |
-| `MarketplacePage` | `/marketplace` | Buy/list NFT ships |
+| `Marketplace` | `/marketplace` | Shop · My Fleet · P2P Market |
 | `Tournaments` | `/tournaments` | Brackets, join, results |
 | `Leaderboard` | `/leaderboard` | Global top players |
 | `Profile` | `/profile/:address` | Ships, stats, match history |
+| `PracticePage` | `/practice` | AI Bot — no wallet needed |
 
 ### Services & Hooks
 
@@ -152,10 +197,11 @@ Two players battle on a **10×10 grid**, each commanding a fleet of **NFT ships*
 frontend/src/
 ├── services/
 │   ├── battleship.service.ts   # createGame, joinGame, attack, getGameState
-│   │                           # + Tournament: createTournament, joinTournament,
-│   │                           #   getTournament, getActiveTournaments
+│   │                           # + Tournament: createTournament, joinTournament
 │   ├── nft.service.ts          # mintShip, upgradeShip, getUserShips
-│   └── staking.service.ts      # stake, unstake, claimRewards, getStakingInfo
+│   ├── staking.service.ts      # stake, unstake, claimRewards, getStakingInfo
+│   └── marketplace.service.ts  # getActiveListings, listShipForSale, buyListing,
+│                               #   cancelListing — full TopDecode v0.6.0
 ├── hooks/
 │   ├── useGame.ts              # Full game state + optimistic updates
 │   ├── useStaking.ts           # Auto-fetch + refresh after actions
@@ -175,16 +221,16 @@ frontend/src/
 
 ### Config (`frontend/src/config.ts`)
 
-Contract addresses are injected via `VITE_` environment variables. Run `deploy-devnet.sh` to auto-generate `frontend/.env.local`.
+Contract addresses injected via `VITE_` env vars. `requireEnv()` throws at build time if any address is missing — no silent wrong-address deploys.
 
 ```ts
-// frontend/src/config.ts
 export const CONTRACTS = {
-  BATTLESHIP_ADDRESS:  import.meta.env.VITE_BATTLESHIP_ADDRESS  ?? '',
-  NFT_ADDRESS:         import.meta.env.VITE_NFT_ADDRESS         ?? '',
-  STAKING_ADDRESS:     import.meta.env.VITE_STAKING_ADDRESS     ?? '',
-  MARKETPLACE_ADDRESS: import.meta.env.VITE_MARKETPLACE_ADDRESS ?? '',
-  TOURNAMENT_ADDRESS:  import.meta.env.VITE_TOURNAMENT_ADDRESS  ?? '', // v2-supernova — new address after fresh deploy
+  BATTLESHIP_ADDRESS:  requireEnv('VITE_BATTLESHIP_ADDRESS'),
+  NFT_ADDRESS:         requireEnv('VITE_NFT_ADDRESS'),
+  STAKING_ADDRESS:     requireEnv('VITE_STAKING_ADDRESS'),
+  MARKETPLACE_ADDRESS: requireEnv('VITE_MARKETPLACE_ADDRESS'),
+  TOURNAMENT_ADDRESS:  requireEnv('VITE_TOURNAMENT_ADDRESS'),
+  LEADERBOARD_ADDRESS: requireEnv('VITE_LEADERBOARD_ADDRESS'),
 } as const;
 ```
 
@@ -195,30 +241,46 @@ export const CONTRACTS = {
 ```
 MetaShipX/
 ├── contracts/
-│   ├── battleship/             # PvP game on-chain (SetMapper, block_nonce timeouts)
+│   ├── battleship/             # PvP game (SetMapper, block_nonce timeouts, leaderboard wiring)
 │   │   └── GAS_OPTIMIZATION.md
 │   ├── nft/                    # SFT ships mint + upgrade (minted_at_ms)
 │   ├── staking/                # EGLD reward pool (millis APR)
-│   ├── marketplace/            # Secondary NFT market
-│   └── tournament/             # Elimination brackets (v2-supernova, created_at_ms)
+│   ├── marketplace/            # Secondary NFT market (P2P list/buy/cancel)
+│   ├── tournament/             # Elimination brackets (v2-supernova, created_at_ms)
+│   │   └── src/deploy.md
+│   └── leaderboard/            # On-chain top-50 (insertion sort, updatePlayer)
 │       └── src/deploy.md
 ├── frontend/
 │   ├── src/
-│   │   ├── components/         # GameBoard, Navbar, etc.
-│   │   ├── pages/              # All app pages
+│   │   ├── components/         # GameBoard, Navbar, TxButton, TurnTimer
+│   │   ├── pages/              # All app pages incl. PracticePage
 │   │   ├── hooks/              # Custom React hooks
-│   │   ├── services/           # Contract interactions
+│   │   ├── services/           # Contract interactions + TopDecode
 │   │   ├── utils/              # board.ts, formatters
-│   │   └── config.ts           # Contract addresses per env
+│   │   └── config.ts           # requireEnv() fail-fast contract addresses
 │   └── Dockerfile.dev
 ├── backend/
 │   ├── src/
+│   │   ├── game/               # BotService, PracticeController, GameModule
 │   │   ├── webhook/            # Controller + Service + Entity
 │   │   └── events/             # EventsGateway WebSocket
 │   ├── .env.example
 │   └── Dockerfile
-├── docker-compose.yml          # Postgres + Backend + Frontend
-├── deploy-devnet.sh            # Automated devnet deploy script
+├── tests/
+│   └── e2e/                    # Playwright: game-flow, marketplace, staking, practice
+│       └── playwright.config.ts
+├── scripts/
+│   ├── mainnet-deploy.sh       # Ordered 6-contract deploy + smoke test + env gen
+│   └── check-reward-pool.sh    # Cron-ready reward pool health check
+├── .github/
+│   └── workflows/
+│       ├── contract-tests.yml  # Rust build + unit test on contracts/**
+│       ├── e2e-tests.yml       # Playwright E2E on frontend/backend changes
+│       └── auto-label.yml      # PR auto-labeling by path
+├── docs/
+│   └── MAINNET_AUDIT_CHECKLIST.md  # 48-point pre-mainnet security checklist
+├── docker-compose.yml
+├── deploy-devnet.sh
 └── README.md
 ```
 
@@ -229,41 +291,30 @@ MetaShipX/
 ### Prerequisites
 
 ```bash
-# Rust + MultiversX framework
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install multiversx-sc-meta
-
-# mxpy CLI
 pip install multiversx-sdk-cli
-
-# Node.js 20+
 node --version  # v20+
 ```
 
 ### Start locally with Docker
 
 ```bash
-# 1. Clone the repo
 git clone https://github.com/Gzeu/MetaShipX.git
 cd MetaShipX
-
-# 2. Configure backend
 cp backend/.env.example backend/.env.local
-# edit: WEBHOOK_SECRET=<openssl rand -hex 32>
-
-# 3. Start everything
+# edit: WEBHOOK_SECRET, SESSION_SECRET (32 chars random each)
 docker-compose up -d
-
-# Frontend: http://localhost:5173
-# Backend:  http://localhost:4000
-# Postgres: localhost:5432
+# Frontend: http://localhost:5173  Backend: http://localhost:4000
 ```
 
-### Start manually (without Docker)
+### Start manually
 
 ```bash
 # Backend
-cd backend && npm install && npm run start:dev
+cd backend
+npm install express-session @types/express-session
+npm install && npm run start:dev
 
 # Frontend
 cd frontend && npm install && npm run dev
@@ -271,85 +322,85 @@ cd frontend && npm install && npm run dev
 
 ---
 
-## 📦 Deploy to Devnet
+## 📦 Deploy
 
 ```bash
-# Build and deploy all contracts automatically
-chmod +x deploy-devnet.sh
-WALLET_PEM=~/devnet-wallet.pem ./deploy-devnet.sh
+# Devnet (full automated — all 6 contracts)
+WALLET_PEM=~/devnet-wallet.pem CHAIN=devnet ./scripts/mainnet-deploy.sh
 
-# OR manually:
-cd contracts/battleship
-sc-meta all build
-mxpy contract deploy \
-  --bytecode=output/battleship.wasm \
-  --pem=wallet/devnet.pem \
-  --chain=D \
-  --gas-limit=60000000 \
-  --proxy=https://devnet-gateway.multiversx.com
+# Mainnet (requires double-confirm: type 'deploy mainnet')
+WALLET_PEM=~/mainnet-wallet.pem CHAIN=mainnet ./scripts/mainnet-deploy.sh
 
-# Repeat for nft/, staking/, marketplace/, tournament/
-# Tournament requires a fresh deploy (v2-supernova) — see contracts/tournament/src/deploy.md
-# Then update frontend/.env.local with the addresses printed by the script
+# Post-deploy: wire battleship → leaderboard
+mxpy contract call $BATTLESHIP_ADDR \
+  --function=setLeaderboardContract \
+  --arguments $LEADERBOARD_ADDR \
+  --pem=wallet.pem --chain=D
 ```
 
 ---
 
 ## ⛽ Gas Optimization
 
-`attack()` is the most-called endpoint — gas savings have a direct impact on cost per match:
+`attack()` is the most-called endpoint:
 
 | Technique | Impact |
 |---|---|
 | `SetMapper` for `attacked_positions` | `contains()` O(1) vs O(n) on `VecMapper` |
 | Batch storage writes | Single final write instead of multiple updates |
-| Cache storage reads in local variables | Avoids repeated storage reads per access |
-| `UnorderedSetMapper` when order is irrelevant | Less gas per insert |
+| Cache storage reads locally | Avoids repeated storage reads per access |
+| Leaderboard: `transfer_execute` fire-and-forget | 12M gas cap, never reverts game |
 
-Full details in [`contracts/battleship/GAS_OPTIMIZATION.md`](contracts/battleship/GAS_OPTIMIZATION.md).
+Full details: [`contracts/battleship/GAS_OPTIMIZATION.md`](contracts/battleship/GAS_OPTIMIZATION.md)
 
 ---
 
 ## 🗺 Roadmap
 
-### ✅ Sprint 1–3 (Completed)
-- [x] Battleship smart contract (full PvP, block_nonce timeouts)
-- [x] NFT smart contract (SFT mint, upgrade, burn, `minted_at_ms`)
-- [x] Staking smart contract (reward pool, configurable APR, millis)
-- [x] Tournament smart contract v2-supernova (`created_at_ms`, `reportMatchResult`)
-- [x] Frontend — all pages and hooks
-- [x] NestJS backend — webhook + WebSocket gateway
-- [x] Full Docker Compose setup
-- [x] CI/CD GitHub Actions
-- [x] `multiversx-sc = "0.65.1"` (Supernova-ready)
-- [x] Supernova polling intervals (600 ms MY_TURN / 1500 ms WAITING)
-- [x] TypeScript Tournament types (`created_at_ms: bigint`)
-- [x] README + CONTRIBUTING + SECURITY + CHANGELOG
+### ✅ Completed (v0.1–v0.6)
+- [x] Battleship PvP smart contract (commit-reveal, block_nonce timeouts, leaderboard wiring)
+- [x] NFT contract (SFT mint, upgrade level 1–10, `minted_at_ms`)
+- [x] Staking contract (reward pool, 20% APR, Supernova-ready millis)
+- [x] Marketplace contract (P2P list/buy/cancel, TopDecode in frontend)
+- [x] Tournament contract v2-supernova (`created_at_ms`, `reportMatchResult`)
+- [x] **Leaderboard contract** (on-chain top-50, updatePlayer, getTopPlayers)
+- [x] Full frontend — all pages incl. PracticePage, sticky Navbar
+- [x] AI Bot Practice Mode (Easy/Medium/Hard, no wallet needed)
+- [x] NestJS backend — ThrottlerModule active, GameModule wired, express-session
+- [x] E2E test suite (Playwright — game, marketplace, staking, practice + Pixel5 mobile)
+- [x] CI/CD — contract-tests, e2e-tests, auto-label workflows
+- [x] `mainnet-deploy.sh` — 6-contract ordered deploy + smoke test + fail-safe
+- [x] `config.ts` fail-fast `requireEnv()` — no silent missing addresses
+- [x] `MAINNET_AUDIT_CHECKLIST.md` — 48-point pre-mainnet security checklist
 
-### 🚧 Sprint 4 (In progress)
-- [ ] Devnet deploy + end-to-end testing (Supernova parameters)
-- [ ] Tournament fresh deploy (v2-supernova) + smoke tests
-- [ ] Update `VITE_TOURNAMENT_ADDRESS` in `.env.local`
-- [ ] Marketplace UI polish (full list/buy flow)
-- [ ] Gas measurement on `attack()` — pre/post with `mxpy --simulate`
-- [ ] TypeScript strict errors — full audit
+### 🔜 v0.7.0 — Mainnet Prep
+- [ ] Devnet full smoke test (all 6 contracts wired)
+- [ ] External security audit (Arda Security or equivalent)
+- [ ] Video demo 60–90s + GIF in README
+- [ ] Leaderboard UI wired to `getTopPlayers` on-chain view
+- [ ] `check-reward-pool.sh` cron job on server
 
-### 🔜 Sprint 5+
-- [ ] AI Bot opponent (single-player)
-- [ ] 60–90s video demo + GIF in README
-- [ ] Skin system (cosmetic traits)
-- [ ] Global on-chain leaderboard
-- [ ] Mainnet launch
+### 🔜 v1.0.0 — Mainnet Launch
+- [ ] Mainnet deploy + contract verification
+- [ ] Launch tournament with sponsored prize pool
+- [ ] xPortal featured section submission
+- [ ] Referral system (5% from first wager, on-chain)
+
+### 🔜 Post-Launch
+- [ ] Spectator betting (EGLD on winner)
+- [ ] Guild system + Guild vs Guild tournaments
+- [ ] Mobile PWA / xPortal deeplink optimization
+- [ ] Multi-chain bridge (Solana ↔ MultiversX NFT ships)
 
 ---
 
 ## 🤝 Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution guide.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## 🔒 Security
 
-See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
+See [SECURITY.md](SECURITY.md) and [`docs/MAINNET_AUDIT_CHECKLIST.md`](docs/MAINNET_AUDIT_CHECKLIST.md).
 
 ## 📄 License
 
