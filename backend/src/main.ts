@@ -8,35 +8,64 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const logger = new Logger('Bootstrap');
 
-  // ── Raw body for HMAC signature verification ────────────────────────────
+  // ✅ AUDIT: fail-fast SESSION_SECRET validation at startup
+  const sessionSecret = process.env.SESSION_SECRET ?? '';
+  if (sessionSecret.length < 32) {
+    const msg = 'FATAL: SESSION_SECRET must be at least 32 characters. Set it in .env.local';
+    logger.error(msg);
+    throw new Error(msg);
+  }
+
+  // ✅ AUDIT: fail-fast ADMIN_SECRET validation
+  const adminSecret = process.env.ADMIN_SECRET ?? '';
+  if (process.env.NODE_ENV === 'production' && adminSecret.length < 16) {
+    const msg = 'FATAL: ADMIN_SECRET must be at least 16 characters in production';
+    logger.error(msg);
+    throw new Error(msg);
+  }
+
+  // ✅ AUDIT: fail-fast MX_WEBHOOK_PUBKEY in production
+  if (process.env.NODE_ENV === 'production' && !process.env.MX_WEBHOOK_PUBKEY) {
+    const msg = 'FATAL: MX_WEBHOOK_PUBKEY must be set in production for webhook signature verification';
+    logger.error(msg);
+    throw new Error(msg);
+  }
+
+  // Raw body for webhook HMAC signature verification
   app.use('/webhook/mx-transactions', bodyParser.json({
     verify: (req: any, _res, buf) => { req.rawBody = buf; },
   }));
 
-  // ── Session (used by PracticeController for bot game state) ─────────────
+  // Session (used by PracticeController for bot game state)
   app.use(session({
-    secret: process.env.SESSION_SECRET || 'metashipx-dev-secret-change-in-prod',
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
       maxAge: 60 * 60 * 1000, // 1 hour
       secure: process.env.NODE_ENV === 'production',
       sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      httpOnly: true, // ✅ AUDIT: prevent XSS access to session cookie
     },
   }));
 
-  // ── CORS ────────────────────────────────────────────────────────────────
+  // ✅ AUDIT: explicit CORS whitelist — no wildcard in production
+  const allowedOrigin = process.env.FRONTEND_URL;
+  if (process.env.NODE_ENV === 'production' && !allowedOrigin) {
+    throw new Error('FATAL: FRONTEND_URL must be set in production (no wildcard CORS allowed)');
+  }
   app.enableCors({
-    origin: process.env.FRONTEND_URL || '*',
+    origin: allowedOrigin ?? 'http://localhost:5173',
     credentials: true,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Secret'],
   });
 
-  // ── Validation ──────────────────────────────────────────────────────────
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
   const port = process.env.PORT || 4000;
   await app.listen(port);
-  logger.log(`MetaShipX backend running on port ${port}`);
+  logger.log(`MetaShipX backend running on port ${port} [${process.env.NODE_ENV ?? 'development'}]`);
 }
 
 bootstrap();
