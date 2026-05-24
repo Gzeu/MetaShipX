@@ -30,15 +30,23 @@ export const CONTRACTS = {
   STAKING_ADDRESS:     requireEnv('VITE_STAKING_ADDRESS'),
   MARKETPLACE_ADDRESS: requireEnv('VITE_MARKETPLACE_ADDRESS'),
   TOURNAMENT_ADDRESS:  requireEnv('VITE_TOURNAMENT_ADDRESS'),
+  LEADERBOARD_ADDRESS: requireEnv('VITE_LEADERBOARD_ADDRESS'),
 } as const;
+
+// Convenience re-exports used by services
+export const BATTLESHIP_CONTRACT_ADDRESS  = CONTRACTS.BATTLESHIP_ADDRESS;
+export const TOURNAMENT_CONTRACT_ADDRESS  = CONTRACTS.TOURNAMENT_ADDRESS;
+export const LEADERBOARD_CONTRACT_ADDRESS = CONTRACTS.LEADERBOARD_ADDRESS;
 
 export const CHAIN_CONFIG = {
   id:       (import.meta.env.VITE_ENV as 'devnet' | 'testnet' | 'mainnet') ?? 'devnet',
   proxyUrl: import.meta.env.VITE_API_URL ?? 'https://devnet-api.multiversx.com',
 } as const;
 
+export const NETWORK_PROVIDER_URL = CHAIN_CONFIG.proxyUrl;
+
 export const APP_CONFIG = {
-  WS_URL:        import.meta.env.VITE_WS_URL  ?? 'ws://localhost:3001',
+  WS_URL:        import.meta.env.VITE_WS_URL      ?? 'ws://localhost:3001',
   BACKEND_URL:   import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3001',
   PRACTICE_URL:  import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3001',
 } as const;

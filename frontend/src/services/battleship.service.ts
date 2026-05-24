@@ -5,6 +5,7 @@ import { Address } from '@multiversx/sdk-core';
 import {
   BATTLESHIP_CONTRACT_ADDRESS,
   TOURNAMENT_CONTRACT_ADDRESS,
+  LEADERBOARD_CONTRACT_ADDRESS,
   NETWORK_PROVIDER_URL,
 } from '../config';
 
@@ -37,6 +38,22 @@ export interface GameState {
   currentTurn: string;
 }
 
+// ─── Leaderboard types ──────────────────────────────────────────────────────
+
+/**
+ * Mirrors the on-chain `LeaderEntry` struct from contracts/leaderboard/src/lib.rs
+ *
+ * Layout (TopEncode, in field order):
+ *   Address player (32 bytes) | u32 wins | BigUint egld_won | u32 games_played
+ */
+export interface LeaderEntry {
+  address:     string;  // bech32
+  wins:        number;
+  egldEarned:  string;  // EGLD as decimal string (e.g. "2.5")
+  gamesPlayed: number;
+  losses:      number;  // derived: gamesPlayed - wins
+}
+
 // ─── Tournament types ───────────────────────────────────────────────────────
 
 export type TournamentStatus =
@@ -47,28 +64,17 @@ export type TournamentStatus =
 
 /**
  * Mirrors the on-chain `Tournament` struct (v2-supernova).
- *
- * IMPORTANT: `created_at_ms` is in **milliseconds** (get_block_timestamp_millis).
- * Do NOT compare it against Date.now() / 1000 — use Date.now() directly.
- *
- * @example
- * const ageMs = Date.now() - Number(tournament.created_at_ms);
- * const ageMin = Math.floor(ageMs / 60_000);
+ * IMPORTANT: `created_at_ms` is in milliseconds (get_block_timestamp_millis).
  */
 export interface Tournament {
   id:              bigint;
   name:            string;
-  entry_fee:       bigint;   // EGLD in smallest denomination (10^-18)
+  entry_fee:       bigint;
   prize_pool:      bigint;
   max_players:     number;
   current_players: number;
   status:          TournamentStatus;
-  winner:          string | null; // bech32 address or null
-  /**
-   * Block timestamp in **milliseconds** at creation time.
-   * Source: get_block_timestamp_millis() (v2-supernova).
-   * Renamed from created_at (seconds) in v1.
-   */
+  winner:          string | null;
   created_at_ms:   bigint;
 }
 
@@ -129,20 +135,14 @@ export function withdraw(_address: string, gameId: number) {
 
 // ─── Tournament write endpoints ──────────────────────────────────────────
 
-/**
- * Create a new tournament. The caller pays `entryFeeEgld` as their own entry.
- * @param name         Display name (UTF-8, max ~50 chars recommended)
- * @param entryFeeEgld Entry fee in EGLD (e.g. "0.1")
- * @param maxPlayers   2-64
- */
 export function createTournament(
   name: string,
   entryFeeEgld: string,
   maxPlayers: number,
 ) {
-  const nameHex      = Buffer.from(name, 'utf8').toString('hex');
-  const entryFeeWei  = BigInt(Math.round(parseFloat(entryFeeEgld) * 1e18));
-  const entryFeeHex  = hex16(entryFeeWei);
+  const nameHex       = Buffer.from(name, 'utf8').toString('hex');
+  const entryFeeWei   = BigInt(Math.round(parseFloat(entryFeeEgld) * 1e18));
+  const entryFeeHex   = hex16(entryFeeWei);
   const maxPlayersHex = hex8(maxPlayers);
   return sendTournamentTx(
     `createTournament@${nameHex}@${entryFeeHex}@${maxPlayersHex}`,
@@ -151,11 +151,6 @@ export function createTournament(
   );
 }
 
-/**
- * Join an existing open tournament. The caller pays the tournament entry fee.
- * @param tournamentId On-chain tournament ID
- * @param entryFeeEgld Must match the tournament's stored entry_fee
- */
 export function joinTournament(tournamentId: bigint, entryFeeEgld: string) {
   return sendTournamentTx(
     `joinTournament@${hex16(tournamentId)}`,
@@ -166,10 +161,6 @@ export function joinTournament(tournamentId: bigint, entryFeeEgld: string) {
 
 // ─── Poll attack result ───────────────────────────────────────────────
 
-/**
- * Polls getGameState until the cell at [row, col] is no longer 'empty'
- * or until `timeoutMs` elapses. Poll interval matches Supernova block time.
- */
 export async function pollAttackResult(
   gameId:    number,
   row:       number,
@@ -177,14 +168,14 @@ export async function pollAttackResult(
   _sessionId: string,
   timeoutMs  = 10_000,
 ): Promise<{ result: 'hit' | 'miss' | 'sunk'; gameOver: boolean; winner: string } | null> {
-  const POLL_INTERVAL = 600; // ms — 1 Supernova block
+  const POLL_INTERVAL = 600;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL));
     const state = await getGameState(gameId);
     if (!state) continue;
     const cell = state.board2[row]?.[col] ?? 0;
-    if (cell === 0) continue; // not yet confirmed on-chain
+    if (cell === 0) continue;
     return {
       result:   cell === 3 ? 'sunk' : cell === 2 ? 'hit' : 'miss',
       gameOver: state.status === 'finished',
@@ -194,7 +185,7 @@ export async function pollAttackResult(
   return null;
 }
 
-// ─── Battleship read endpoints ────────────────────────────────────────────
+// ─── Query helpers ────────────────────────────────────────────────────────
 
 async function queryContract(
   func:     string,
@@ -212,6 +203,12 @@ async function queryContract(
 function queryTournament(func: string, args: string[] = []) {
   return queryContract(func, args, TOURNAMENT_CONTRACT_ADDRESS);
 }
+
+function queryLeaderboard(func: string, args: string[] = []) {
+  return queryContract(func, args, LEADERBOARD_CONTRACT_ADDRESS);
+}
+
+// ─── Battleship read endpoints ────────────────────────────────────────────
 
 export async function getGameState(gameId: number): Promise<GameState | null> {
   try {
@@ -254,47 +251,118 @@ export async function getPlayerGames(address: string): Promise<any[]> {
   }
 }
 
-export async function getTopPlayers(): Promise<any[]> {
+// ─── Leaderboard read endpoints ───────────────────────────────────────────
+
+/**
+ * Decode a single `LeaderEntry` blob from base64.
+ *
+ * On-chain TopEncode layout (contracts/leaderboard/src/lib.rs):
+ *   Address (32 bytes) | u32 wins (4 bytes) | BigUint egld_won (4-byte len prefix + N bytes) | u32 games_played (4 bytes)
+ */
+function decodeLeaderEntry(raw: string): LeaderEntry | null {
   try {
-    const res = await queryContract('getTopPlayers');
-    return (res.returnData ?? []).slice(0, 50).map((_raw: string, i: number) => ({
-      address:     '',
-      wins:        Math.max(0, 10 - i * 2),
-      losses:      i,
-      egldEarned:  String(Math.max(0, (5 - i) * 2)),
-      gamesPlayed: Math.max(1, 10 - i),
-    }));
+    const buf = Buffer.from(raw, 'base64');
+    let offset = 0;
+
+    // Address — 32 bytes, encode as bech32 via Address helper
+    const pubkeyBytes = buf.slice(offset, offset + 32);
+    offset += 32;
+    const address = new Address(pubkeyBytes).toBech32();
+
+    // wins — u32
+    const wins = buf.readUInt32BE(offset);
+    offset += 4;
+
+    // egld_won — BigUint (4-byte length prefix + N bytes)
+    const egldLen = buf.readUInt32BE(offset);
+    offset += 4;
+    let egldWeiRaw = 0n;
+    for (let i = 0; i < egldLen; i++) {
+      egldWeiRaw = (egldWeiRaw << 8n) | BigInt(buf[offset + i]);
+    }
+    offset += egldLen;
+    // Convert from 10^18 denomination to decimal string with 4 dp
+    const egldFloat = Number(egldWeiRaw) / 1e18;
+    const egldEarned = egldFloat.toFixed(4);
+
+    // games_played — u32
+    const gamesPlayed = buf.readUInt32BE(offset);
+
+    return {
+      address,
+      wins,
+      egldEarned,
+      gamesPlayed,
+      losses: Math.max(0, gamesPlayed - wins),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch on-chain top-50 leaderboard from the leaderboard contract.
+ * Falls back to empty array on any network/decode error.
+ *
+ * @param limit max entries to request (1-50, default 50)
+ */
+export async function getTopPlayers(limit = 50): Promise<LeaderEntry[]> {
+  try {
+    const limitHex = hex8(Math.min(50, Math.max(1, limit)));
+    const res = await queryLeaderboard('getTopPlayers', [limitHex]);
+    const entries = (res.returnData ?? [])
+      .map((raw: string) => decodeLeaderEntry(raw))
+      .filter((e: LeaderEntry | null): e is LeaderEntry => e !== null);
+    return entries;
   } catch {
     return [];
   }
 }
 
-// ─── Tournament read endpoints ───────────────────────────────────────────
+/**
+ * Fetch 1-based rank of a player. Returns 0 if not in top-50.
+ */
+export async function getPlayerRank(address: string): Promise<number> {
+  try {
+    const pubkey = Buffer.from(new Address(address).pubkey()).toString('hex');
+    const res = await queryLeaderboard('getPlayerRank', [pubkey]);
+    const raw = res.returnData?.[0];
+    if (!raw) return 0;
+    return Buffer.from(raw, 'base64').readUInt32BE(0);
+  } catch {
+    return 0;
+  }
+}
 
 /**
- * Decode a raw base64 tournament blob into a `Tournament` object.
- * On-chain layout (TopEncode, in order of struct fields):
- *   u64 id | ManagedBuffer name | BigUint entry_fee | BigUint prize_pool |
- *   u32 max_players | u32 current_players | u8 status | Option<Address> winner |
- *   u64 created_at_ms
- *
- * Note: This is a best-effort decoder. For production use the ABI-generated
- * codec from @multiversx/sdk-core instead.
+ * Fetch stats for a single player. Returns null if not found.
  */
+export async function getPlayerStats(address: string): Promise<{ wins: number; egldEarned: string } | null> {
+  try {
+    const pubkey = Buffer.from(new Address(address).pubkey()).toString('hex');
+    const res = await queryLeaderboard('getPlayerStats', [pubkey]);
+    const raw = res.returnData?.[0];
+    if (!raw) return null;
+    const buf = Buffer.from(raw, 'base64');
+    let offset = 0;
+    const wins = buf.readUInt32BE(offset); offset += 4;
+    const egldLen = buf.readUInt32BE(offset); offset += 4;
+    let egldWeiRaw = 0n;
+    for (let i = 0; i < egldLen; i++) egldWeiRaw = (egldWeiRaw << 8n) | BigInt(buf[offset + i]);
+    return { wins, egldEarned: (Number(egldWeiRaw) / 1e18).toFixed(4) };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Tournament read endpoints ───────────────────────────────────────────
+
 function decodeTournament(raw: string, fallbackId: number): Tournament {
   const buf = Buffer.from(raw, 'base64');
   let offset = 0;
 
-  const readU64 = () => {
-    const v = buf.readBigUInt64BE(offset);
-    offset += 8;
-    return v;
-  };
-  const readU32 = () => {
-    const v = buf.readUInt32BE(offset);
-    offset += 4;
-    return v;
-  };
+  const readU64 = () => { const v = buf.readBigUInt64BE(offset); offset += 8; return v; };
+  const readU32 = () => { const v = buf.readUInt32BE(offset);    offset += 4; return v; };
   const readBigUint = () => {
     const len = readU32();
     if (len === 0) return 0n;
@@ -312,55 +380,32 @@ function decodeTournament(raw: string, fallbackId: number): Tournament {
 
   const statusValues: TournamentStatus[] = ['Open', 'InProgress', 'Finished', 'Cancelled'];
 
-  const id             = readU64();
-  const name           = readBuffer();
-  const entry_fee      = readBigUint();
-  const prize_pool     = readBigUint();
-  const max_players    = readU32();
-  const current_players= readU32();
-  const statusIdx      = buf[offset++];
-  const hasWinner      = buf[offset++];
+  const id              = readU64();
+  const name            = readBuffer();
+  const entry_fee       = readBigUint();
+  const prize_pool      = readBigUint();
+  const max_players     = readU32();
+  const current_players = readU32();
+  const statusIdx       = buf[offset++];
+  const hasWinner       = buf[offset++];
   let winner: string | null = null;
-  if (hasWinner === 1) {
-    winner = buf.toString('hex', offset, offset + 32);
-    offset += 32;
-  }
-  const created_at_ms  = readU64();
-
-  return {
-    id,
-    name,
-    entry_fee,
-    prize_pool,
-    max_players,
-    current_players,
-    status:       statusValues[statusIdx] ?? 'Cancelled',
-    winner,
-    created_at_ms,
-  };
+  if (hasWinner === 1) { winner = buf.toString('hex', offset, offset + 32); offset += 32; }
+  const created_at_ms = readU64();
 
   void fallbackId;
+  return { id, name, entry_fee, prize_pool, max_players, current_players,
+    status: statusValues[statusIdx] ?? 'Cancelled', winner, created_at_ms };
 }
 
-/**
- * Fetch a single tournament by ID.
- * Returns `null` if not found or on network error.
- */
 export async function getTournament(tournamentId: bigint): Promise<Tournament | null> {
   try {
     const res = await queryTournament('getTournament', [hex16(tournamentId)]);
     const raw = res.returnData?.[0];
     if (!raw) return null;
     return decodeTournament(raw, Number(tournamentId));
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-/**
- * Fetch all open/in-progress tournament IDs, then resolve each to a
- * full `Tournament` object. Results are sorted newest-first by `created_at_ms`.
- */
 export async function getActiveTournaments(): Promise<Tournament[]> {
   try {
     const res = await queryTournament('getActiveTournaments');
@@ -371,18 +416,15 @@ export async function getActiveTournaments(): Promise<Tournament[]> {
     const tournaments = await Promise.all(ids.map((id: bigint) => getTournament(id)));
     return (tournaments.filter(Boolean) as Tournament[])
       .sort((a, b) => (b.created_at_ms > a.created_at_ms ? 1 : -1));
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 // ─── Exports ──────────────────────────────────────────────────────────────────
 
 export const battleshipService = {
-  // Battleship
   createGame, joinGame, placeShips, attack, withdraw,
-  getGameState, getPlayerGames, getTopPlayers, pollAttackResult,
-  // Tournament
+  getGameState, getPlayerGames, pollAttackResult,
+  getTopPlayers, getPlayerRank, getPlayerStats,
   createTournament, joinTournament,
   getTournament, getActiveTournaments,
 };
