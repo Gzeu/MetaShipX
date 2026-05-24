@@ -108,6 +108,11 @@ pub trait Battleship {
     #[storage_mapper("staking_contract")]
     fn staking_contract(&self) -> SingleValueMapper<ManagedAddress>;
 
+    /// ✅ Leaderboard contract address — optional, safe to leave unset.
+    /// Call setLeaderboardContract(addr) after deploying the leaderboard contract.
+    #[storage_mapper("leaderboard_contract")]
+    fn leaderboard_contract(&self) -> SingleValueMapper<ManagedAddress>;
+
     #[storage_mapper("player_ship_nonce")]
     fn player_ship_nonce(&self, game_id: u64, player_idx: u8) -> SingleValueMapper<u64>;
 
@@ -163,6 +168,14 @@ pub trait Battleship {
     #[event("stakingFeeSent")]
     fn staking_fee_sent_event(&self, #[indexed] game_id: u64, fee_amount: BigUint);
 
+    #[event("leaderboardUpdated")]
+    fn leaderboard_updated_event(
+        &self,
+        #[indexed] game_id: u64,
+        #[indexed] winner: ManagedAddress,
+        egld_won: BigUint,
+    );
+
     // ── Owner config ─────────────────────────────────────────────────────────
 
     #[only_owner]
@@ -181,6 +194,14 @@ pub trait Battleship {
     #[endpoint(setStakingContract)]
     fn set_staking_contract(&self, addr: ManagedAddress) {
         self.staking_contract().set(addr);
+    }
+
+    /// ✅ Set leaderboard contract address. Safe to call post-deploy for upgrades.
+    /// Leave unset to skip leaderboard calls (backward compatible).
+    #[only_owner]
+    #[endpoint(setLeaderboardContract)]
+    fn set_leaderboard_contract(&self, addr: ManagedAddress) {
+        self.leaderboard_contract().set(addr);
     }
 
     // ── Endpoints ───────────────────────────────────────────────────────────
@@ -375,15 +396,20 @@ pub trait Battleship {
         if result == AttackResult::GameOver {
             let winner_ship_nonce = self.player_ship_nonce(game_id, player_idx).get();
 
-            if state.tournament_id == 0 {
+            let prize = if state.tournament_id == 0 {
                 let total_pot = state.bet.clone() * 2u64;
                 let fee = total_pot.clone() * STAKING_FEE_BPS / 10_000u64;
-                let prize = total_pot - fee.clone();
-                self.send().direct_egld(&caller, &prize);
+                let prize_amt = total_pot - fee.clone();
+                self.send().direct_egld(&caller, &prize_amt);
                 self.notify_staking_reward(game_id, fee);
-            }
+                prize_amt
+            } else {
+                BigUint::zero()
+            };
 
             self.notify_nft_win(game_id, caller.clone(), winner_ship_nonce);
+            // ✅ Leaderboard: record win + EGLD won (fire-and-forget, safe if unset)
+            self.notify_leaderboard(game_id, caller.clone(), prize.clone());
 
             state.phase = GamePhase::Finished;
             state.winner = Some(caller.clone());
@@ -434,6 +460,8 @@ pub trait Battleship {
         let prize = total_pot - fee.clone();
         self.send().direct_egld(&caller, &prize);
         self.notify_staking_reward(game_id, fee);
+        // ✅ Leaderboard: abandoned game counts as win for the waiting player
+        self.notify_leaderboard(game_id, caller.clone(), prize.clone());
 
         state.phase = GamePhase::Finished;
         state.winner = Some(caller.clone());
@@ -495,6 +523,20 @@ pub trait Battleship {
         self.tournament_result_reported_event(game_id, tournament_id, match_id, winner);
     }
 
+    /// ✅ Notify leaderboard contract after every game-ending event.
+    /// Uses transfer_execute (fire-and-forget) — leaderboard failure
+    /// does NOT revert the game result. Safe to call with unset address.
+    fn notify_leaderboard(&self, game_id: u64, winner: ManagedAddress, egld_won: BigUint) {
+        if self.leaderboard_contract().is_empty() { return; }
+        let lb_addr = self.leaderboard_contract().get();
+        if lb_addr == ManagedAddress::zero() { return; }
+        self.leaderboard_proxy(lb_addr)
+            .update_player(winner.clone(), egld_won.clone())
+            .with_gas_limit(12_000_000)
+            .transfer_execute();
+        self.leaderboard_updated_event(game_id, winner, egld_won);
+    }
+
     // ── Proxies ──────────────────────────────────────────────────────────────
 
     #[proxy]
@@ -505,6 +547,9 @@ pub trait Battleship {
 
     #[proxy]
     fn staking_proxy(&self, sc_address: ManagedAddress) -> staking_proxy::Proxy<Self::Api>;
+
+    #[proxy]
+    fn leaderboard_proxy(&self, sc_address: ManagedAddress) -> leaderboard_proxy::Proxy<Self::Api>;
 
     // ── Views ────────────────────────────────────────────────────────────────
 
@@ -538,6 +583,15 @@ pub trait Battleship {
 
     #[view(getStakingContract)]
     fn get_staking_contract(&self) -> ManagedAddress { self.staking_contract().get() }
+
+    #[view(getLeaderboardContract)]
+    fn get_leaderboard_contract(&self) -> ManagedAddress {
+        if self.leaderboard_contract().is_empty() {
+            ManagedAddress::zero()
+        } else {
+            self.leaderboard_contract().get()
+        }
+    }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -582,5 +636,16 @@ mod staking_proxy {
         #[payable("EGLD")]
         #[endpoint(fundRewardPool)]
         fn fund_reward_pool(&self);
+    }
+}
+
+mod leaderboard_proxy {
+    multiversx_sc::imports!();
+    #[multiversx_sc::proxy]
+    pub trait LeaderboardContract {
+        /// Called after every game win. Restricted to battleship_contract caller
+        /// on the leaderboard side. Fire-and-forget from battleship.
+        #[endpoint(updatePlayer)]
+        fn update_player(&self, player: ManagedAddress, egld_won: BigUint);
     }
 }
