@@ -1,75 +1,70 @@
-version: '3.9'
+version: '3.8'
 
 services:
-  # ── PostgreSQL ─────────────────────────────────────────────────────────────
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: metashipx
-      POSTGRES_PASSWORD: secret
-      POSTGRES_DB: metashipx
-    ports:
-      - '5432:5432'
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U metashipx']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ── Backend (NestJS) ───────────────────────────────────────────────────────
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    restart: unless-stopped
+    # ✅ AUDIT: run as non-root node user
+    user: "node"
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://metashipx:${DB_PASSWORD}@postgres:5432/metashipx?sslmode=disable
+      SESSION_SECRET: ${SESSION_SECRET}
+      ADMIN_SECRET: ${ADMIN_SECRET}
+      FRONTEND_URL: ${FRONTEND_URL}
+      MX_WEBHOOK_PUBKEY: ${MX_WEBHOOK_PUBKEY:-}
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      NODE_ENV: development
-      PORT: 4000
-      DATABASE_URL: postgresql://metashipx:secret@postgres:5432/metashipx
-      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev_secret_change_me}
-      FRONTEND_URL: http://localhost:5173
-    ports:
-      - '4000:4000'
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
+    restart: unless-stopped
+    # ✅ AUDIT: no unnecessary capabilities
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  # ── Frontend (Vite dev server) ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    # ✅ AUDIT: run as non-root
+    user: "postgres"
+    environment:
+      POSTGRES_USER: metashipx
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: metashipx
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metashipx"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile.dev
+      args:
+        VITE_BATTLESHIP_ADDRESS: ${VITE_BATTLESHIP_ADDRESS}
+        VITE_NFT_ADDRESS: ${VITE_NFT_ADDRESS}
+        VITE_STAKING_ADDRESS: ${VITE_STAKING_ADDRESS}
+        VITE_MARKETPLACE_ADDRESS: ${VITE_MARKETPLACE_ADDRESS}
+        VITE_TOURNAMENT_ADDRESS: ${VITE_TOURNAMENT_ADDRESS}
+        VITE_LEADERBOARD_ADDRESS: ${VITE_LEADERBOARD_ADDRESS}
+    ports:
+      - "80:80"
+      - "443:443"
     restart: unless-stopped
     depends_on:
       - backend
-    environment:
-      VITE_ENV: devnet
-      VITE_WS_URL: ws://localhost:4000
-      VITE_WEBHOOK_URL: http://localhost:4000
-    ports:
-      - '5173:5173'
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-
-  # ── mx-notifier (MultiversX transaction notifier) ──────────────────────────
-  # Uncomment after running: docker pull multiversx/mx-chain-notifier-go
-  # notifier:
-  #   image: multiversx/mx-chain-notifier-go:latest
-  #   restart: unless-stopped
-  #   environment:
-  #     NOTIFIER_API_TYPE: rabbit-api
-  #     NOTIFIER_ADDRESSES: ${BATTLESHIP_CONTRACT},${NFT_CONTRACT},${STAKING_CONTRACT}
-  #     NOTIFIER_WEBHOOK_URL: http://backend:4000/webhook/mx-transactions
-  #     NOTIFIER_SECRET: ${WEBHOOK_SECRET:-dev_secret_change_me}
-  #   ports:
-  #     - '8080:8080'
 
 volumes:
   pgdata:
