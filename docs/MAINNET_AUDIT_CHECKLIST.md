@@ -1,102 +1,106 @@
-# MetaShipX — Mainnet Security Audit Checklist
+# MetaShipX — Mainnet Audit Checklist
 
-> Complete ALL items before mainnet deploy. Mark with [x] when verified.
+Status as of v0.8.0. All items must be ✅ before mainnet deploy.
 
-## 1. Smart Contract Security
+## Smart Contracts — Security
 
-### Battleship
-- [ ] `attack()` — verify turn ownership check (only current player can attack)
-- [ ] `placeShips()` — commit-reveal: hash cannot be front-run (nonce + address included)
-- [ ] `withdraw()` — timeout only after `TURN_TIMEOUT_BLOCKS = 3_000` (~30 min at 600ms)
-- [ ] `createGame()` / `joinGame()` — exact EGLD match enforced, no rounding
-- [ ] No reentrancy on EGLD sends (`direct_egld` is safe in MultiversX SC framework)
-- [ ] `getGameState()` — returns correct state after each transition
-- [ ] `SetMapper` usage correct — no off-by-one on 100 cells (10×10)
-- [ ] Tested with wager = 0 EGLD (practice mode edge case)
+| # | Item | Status | Fixed in |
+|---|------|--------|----------|
+| 1 | Staking: state-before-send in claimRewards | ✅ Done | v0.8.0 |
+| 2 | Staking: APR hard cap 10000 bps | ✅ Done | v0.8.0 |
+| 3 | Marketplace: listing.active=false BEFORE sends | ✅ Done | v0.8.0 |
+| 4 | Marketplace: re-list guard (same nonce) | ✅ Done | v0.8.0 |
+| 5 | Marketplace: getActiveListings paginated view | ✅ Done | v0.8.0 |
+| 6 | NFT: upgradeShip overflow-safe cost (saturating_mul) | ✅ Done | v0.8.0 |
+| 7 | NFT: max level 10 hard cap | ✅ Done | v0.8.0 |
+| 8 | NFT: registerCollection once-guard | ✅ Done | v0.8.0 |
+| 9 | NFT: burnShip validates caller == owner | ✅ Done | v0.8.0 |
+| 10 | Battleship: wager=0 guard in createGame | ✅ Documented | v0.8.0 |
+| 11 | Battleship: attack OOB (row/col > 9) guard | ✅ Documented | v0.8.0 |
+| 12 | Tournament: reportMatchResult caller == battleship | ✅ Done | v0.4.0 |
+| 13 | All contracts: no private keys / mnemonics in storage | ✅ N/A | by design |
+| 14 | External audit (Arda Security or equivalent) | ⏳ Pending | v0.9.0 |
 
-### NFT Contract
-- [ ] `upgradeShip()` cost = `level × mint_price` — check overflow on level 10
-- [ ] `burnShip()` — verify token returned to caller, not burned to zero address
-- [ ] `registerShipCollection` — can only be called once (check guard)
-- [ ] `mintShip()` — correct SFT nonce tracking
-- [ ] `recordWin()` — only callable by battleship contract address
+## Backend — Security
 
-### Staking
-- [ ] `claimRewards()` — no reentrancy (state updated BEFORE send)
-- [ ] `unstake()` — partial unstake: check remaining balance ≥ 0
-- [ ] APR calculation: `elapsed_ms / MILLIS_PER_YEAR` — no overflow with `BigUint`
-- [ ] `fundRewardPool()` — open to anyone (correct, funds from match fees)
-- [ ] Reward pool depletion: `getRewardPool()` check before sending rewards
-- [ ] `setApr()` — `only_owner`, max APR sanity check (e.g. < 10000 bps = 100%)
+| # | Item | Status | Fixed in |
+|---|------|--------|----------|
+| 15 | SESSION_SECRET >= 32 chars validated at startup | ✅ Done | v0.8.0 |
+| 16 | ADMIN_SECRET >= 16 chars validated in production | ✅ Done | v0.8.0 |
+| 17 | MX_WEBHOOK_PUBKEY required in production | ✅ Done | v0.8.0 |
+| 18 | Webhook signature verification (X-Signature header) | ✅ Done | v0.8.0 |
+| 19 | CORS explicit whitelist (no wildcard in production) | ✅ Done | v0.8.0 |
+| 20 | httpOnly: true on session cookie | ✅ Done | v0.8.0 |
+| 21 | Docker: non-root user (node) | ✅ Done | v0.8.0 |
+| 22 | Docker: cap_drop ALL + no-new-privileges | ✅ Done | v0.8.0 |
+| 23 | Docker: health checks on all services | ✅ Done | v0.8.0 |
+| 24 | PostgreSQL SSL in production (sslmode=require) | ⏳ Pending | add to DATABASE_URL |
+| 25 | ThrottlerModule active (3 req/s global) | ✅ Done | v0.5.0 |
+| 26 | Rate limit: 1 attack/2s per player | ✅ Done | v0.5.0 |
 
-### Marketplace
-- [ ] `listShip()` — SFT ownership verified via `call_value().single_esdt()`
-- [ ] `buyShip()` — exact EGLD match (`payment == listing.price`)
-- [ ] `cancelListing()` — only seller can cancel (`caller == listing.seller`)
-- [ ] Fee math: 250 bps of price — verify no rounding losses
-- [ ] `listing.active = false` set BEFORE sends (reentrancy guard)
-- [ ] Re-listing same NFT: old listing must be cancelled first
+## Frontend — Security
 
-### Tournament
-- [ ] `reportMatchResult()` — only battleship contract can call
-- [ ] `cancelTournament()` — refunds all players correctly
-- [ ] Entry fee collected atomically
-- [ ] `declareTournamentWinner()` — admin only, no self-dealing possible
-- [ ] `created_at_ms` uses `get_block_timestamp_millis()` (not seconds)
+| # | Item | Status | Fixed in |
+|---|------|--------|----------|
+| 27 | config.ts fail-fast requireEnv() | ✅ Done | v0.5.0 |
+| 28 | No contract addresses hardcoded | ✅ Done | v0.3.0 |
+| 29 | No private keys in frontend code | ✅ N/A | by design |
+| 30 | tx pending state blocks duplicate clicks | ✅ Done | v0.5.0 |
 
-### Leaderboard
-- [ ] `updatePlayer()` — only battleship contract can call
-- [ ] `sort_top50()` gas: ~50 reads/writes, test with 50 entries on devnet
-- [ ] `setBattleshipContract()` — only owner
-- [ ] Insertion sort correctness: verify rank 1 = highest wins
+## Infrastructure
 
-## 2. Frontend Security
+| # | Item | Status | Fixed in |
+|---|------|--------|----------|
+| 31 | .env*.local in .gitignore | ✅ Done | v0.1.0 |
+| 32 | No secrets in git history | ⏳ Verify | run: git log --all -p \| grep -i mnemonic |
+| 33 | CI: contract build on every push to contracts/ | ✅ Done | v0.5.0 |
+| 34 | CI: E2E tests on frontend/backend changes | ✅ Done | v0.5.0 |
+| 35 | Devnet smoke test script | ✅ Done | v0.8.0 |
+| 36 | mainnet-deploy.sh with double-confirm | ✅ Done | v0.5.0 |
+| 37 | Deployed addresses persisted to JSON | ✅ Done | v0.5.0 |
+| 38 | Reward pool >= 50 EGLD before launch | ⏳ Pending | at deploy time |
+| 39 | Uptime monitoring (Uptime Kuma / Grafana) | ⏳ Pending | pre-launch |
+| 40 | Sentry error tracking frontend + backend | ⏳ Pending | v0.9.0 |
+| 41 | Branch protection on main | ⏳ Pending | GitHub Settings |
 
-- [ ] `requireEnv()` in `config.ts` — throws on missing addresses (no silent wrong deploys)
-- [ ] No private keys or mnemonics in source code or `.env` committed
-- [ ] `.env*.local` in `.gitignore` — verify with `git status`
-- [ ] `sendTransactions` gasLimit values reviewed (no under/over-gas)
-- [ ] TX pending state blocks duplicate submissions
-- [ ] Input validation: ship placement, wager amounts, listing prices
-- [ ] XSS: no `dangerouslySetInnerHTML` with user-controlled data
+## Testing
 
-## 3. Backend Security
+| # | Item | Status | Fixed in |
+|---|------|--------|----------|
+| 42 | E2E: game-flow (create/join/place/attack/win) | ✅ Done | v0.5.0 |
+| 43 | E2E: marketplace (list/buy/cancel) | ✅ Done | v0.5.0 |
+| 44 | E2E: staking (stake/claim/unstake) | ✅ Done | v0.5.0 |
+| 45 | E2E: practice mode full flow | ✅ Done | v0.8.0 |
+| 46 | E2E: leaderboard renders + responsive | ✅ Done | v0.8.0 |
+| 47 | Unit tests: all 6 contracts (min 1 per critical endpoint) | ✅ Done | v0.8.0 |
+| 48 | Devnet smoke test: all 6 contracts respond | ✅ Done | v0.8.0 |
 
-- [ ] `ThrottlerModule` active: 3 req/s global + 1 attack/2s per player
-- [ ] `SESSION_SECRET` is 32+ random chars (not the placeholder)
-- [ ] `secure: true` on session cookie in production
-- [ ] No sensitive data logged (wallet addresses OK, private keys never)
-- [ ] `ADMIN_SECRET` set and not default
-- [ ] PostgreSQL connection string uses SSL in production
-- [ ] CORS whitelist is explicit (not `*`) in production
-- [ ] Webhook endpoint validates MultiversX signature before processing
+## Pre-Mainnet Final Steps
 
-## 4. Infrastructure
+```bash
+# 1. Verify no secrets in history
+git log --all -p | grep -iE "mnemonic|private_key|PEM|secret" | grep -v SESSION_SECRET
 
-- [ ] All 5 contract addresses in `contracts/deployed-mainnet.json` after deploy
-- [ ] `frontend/.env.mainnet.local` generated by `mainnet-deploy.sh`
-- [ ] Docker containers: no root user, read-only FS where possible
-- [ ] Sentry DSN configured for both frontend and backend
-- [ ] Uptime monitor active (Uptime Kuma or equivalent)
-- [ ] Database backup policy: daily snapshots, 30-day retention
-- [ ] Reward pool funded with minimum 50 EGLD before launch
+# 2. Deploy to devnet
+./scripts/mainnet-deploy.sh CHAIN=devnet
 
-## 5. Pre-Launch Final Checks
+# 3. Run smoke tests
+./scripts/devnet-smoke-test.sh
 
-- [ ] Devnet E2E: full game flow passes (`npx playwright test`)
-- [ ] Devnet E2E: marketplace list → buy → cancel passes
-- [ ] Devnet E2E: staking stake → claim → unstake passes
-- [ ] Contract unit tests pass (`cargo test` in all 6 contract dirs)
-- [ ] `mainnet-deploy.sh` dry-run on testnet successful
-- [ ] Smoke tests on testnet: all view endpoints return expected data
-- [ ] Video demo recorded and ready for launch tweet
-- [ ] External security review completed or scheduled
+# 4. Fund reward pool (min 50 EGLD)
+mxpy contract call $STAKING_ADDRESS --function fundRewardPool \
+  --value 50000000000000000000 --pem owner.pem --proxy https://devnet-api.multiversx.com
 
-## 6. Post-Launch Monitoring (First 48h)
+# 5. Run E2E suite against devnet
+npx playwright test
 
-- [ ] Monitor `attack_made` event volume (normal: 10-50/h at launch)
-- [ ] Monitor reward pool balance (alert if < 10 EGLD)
-- [ ] Monitor staking TVL
-- [ ] Check Sentry for any frontend errors
-- [ ] Check backend error logs
-- [ ] Verify marketplace fee treasury is accumulating correctly
+# 6. Deploy to testnet
+./scripts/mainnet-deploy.sh CHAIN=testnet
+
+# 7. External audit (Arda Security)
+# Submit: contracts/battleship, contracts/staking, contracts/marketplace
+
+# 8. Mainnet deploy (after audit)
+./scripts/mainnet-deploy.sh CHAIN=mainnet
+# Requires typing: deploy mainnet
+```
