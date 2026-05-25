@@ -2,6 +2,7 @@
 
 > **Battleship. On-Chain.** — Multiplayer naval strategy game on MultiversX with NFT ships, EGLD wagering, staking rewards, tournaments, secondary marketplace, spectator mode, AI practice bot, and on-chain leaderboard.
 
+[![Version](https://img.shields.io/badge/version-v0.8.0-gold)](https://github.com/Gzeu/MetaShipX/blob/main/CHANGELOG.md)
 [![Build](https://github.com/Gzeu/MetaShipX/actions/workflows/ci.yml/badge.svg)](https://github.com/Gzeu/MetaShipX/actions)
 [![E2E Tests](https://github.com/Gzeu/MetaShipX/actions/workflows/e2e-tests.yml/badge.svg)](https://github.com/Gzeu/MetaShipX/actions)
 [![Contract Tests](https://github.com/Gzeu/MetaShipX/actions/workflows/contract-tests.yml/badge.svg)](https://github.com/Gzeu/MetaShipX/actions)
@@ -271,14 +272,19 @@ MetaShipX/
 │       └── playwright.config.ts
 ├── scripts/
 │   ├── mainnet-deploy.sh       # Ordered 6-contract deploy + smoke test + env gen
-│   └── check-reward-pool.sh    # Cron-ready reward pool health check
+│   ├── devnet-smoke-test.sh    # 7-check contract health validator
+│   ├── check-reward-pool.sh    # Cron-ready reward pool health check
+│   ├── setup-monitoring.sh     # Uptime Kuma install + auto-monitor config
+│   └── check-git-secrets.sh    # Git history secret scanner (audit item #32)
 ├── .github/
 │   └── workflows/
 │       ├── contract-tests.yml  # Rust build + unit test on contracts/**
 │       ├── e2e-tests.yml       # Playwright E2E on frontend/backend changes
 │       └── auto-label.yml      # PR auto-labeling by path
 ├── docs/
-│   └── MAINNET_AUDIT_CHECKLIST.md  # 48-point pre-mainnet security checklist
+│   ├── MAINNET_AUDIT_CHECKLIST.md  # 48-point pre-mainnet security checklist
+│   ├── TOKENOMICS.md               # EGLD flow, fee structure, APR sustainability
+│   └── LAUNCH_ANNOUNCEMENT.md      # Twitter thread + Discord + Forum templates
 ├── docker-compose.yml
 ├── deploy-devnet.sh
 └── README.md
@@ -357,7 +363,7 @@ Full details: [`contracts/battleship/GAS_OPTIMIZATION.md`](contracts/battleship/
 
 ## 🗺 Roadmap
 
-### ✅ Completed (v0.1–v0.6)
+### ✅ Completed (v0.1–v0.8)
 - [x] Battleship PvP smart contract (commit-reveal, block_nonce timeouts, leaderboard wiring)
 - [x] NFT contract (SFT mint, upgrade level 1–10, `minted_at_ms`)
 - [x] Staking contract (reward pool, 20% APR, Supernova-ready millis)
@@ -371,26 +377,42 @@ Full details: [`contracts/battleship/GAS_OPTIMIZATION.md`](contracts/battleship/
 - [x] CI/CD — contract-tests, e2e-tests, auto-label workflows
 - [x] `mainnet-deploy.sh` — 6-contract ordered deploy + smoke test + fail-safe
 - [x] `config.ts` fail-fast `requireEnv()` — no silent missing addresses
-- [x] `MAINNET_AUDIT_CHECKLIST.md` — 48-point pre-mainnet security checklist
-
-### 🔜 v0.7.0 — Mainnet Prep
-- [ ] Devnet full smoke test (all 6 contracts wired)
-- [ ] External security audit (Arda Security or equivalent)
-- [ ] Video demo 60–90s + GIF in README
-- [ ] Leaderboard UI wired to `getTopPlayers` on-chain view
-- [ ] `check-reward-pool.sh` cron job on server
+- [x] `MAINNET_AUDIT_CHECKLIST.md` — 48-point pre-mainnet security checklist (43/48 done)
+- [x] **Audit hardening** — re-entrancy safe, APR cap, overflow guards, once-guards, unit tests
+- [x] **Backend prod hardening** — fail-fast secrets, WebhookSignatureGuard, Docker non-root
+- [x] `devnet-smoke-test.sh` — 7-check CI-safe contract validator
+- [x] `setup-monitoring.sh` — Uptime Kuma auto-install + monitor config
+- [x] `check-git-secrets.sh` — git history secret scanner
+- [x] `TOKENOMICS.md` — EGLD flow, fee structure, APR sustainability model
+- [x] `LAUNCH_ANNOUNCEMENT.md` — Twitter thread + Discord + Forum templates
 
 ### 🔜 v1.0.0 — Mainnet Launch
+- [ ] Devnet full smoke test (all 6 contracts wired + `./scripts/devnet-smoke-test.sh` PASS)
+- [ ] External security audit (Arda Security or equivalent)
+- [ ] Video demo 60–90s + GIF in README
+- [ ] Sentry integration (`@sentry/nestjs` + `@sentry/react`)
 - [ ] Mainnet deploy + contract verification
 - [ ] Launch tournament with sponsored prize pool
 - [ ] xPortal featured section submission
-- [ ] Referral system (5% from first wager, on-chain)
 
 ### 🔜 Post-Launch
+- [ ] Referral system (5% from first wager, on-chain)
 - [ ] Spectator betting (EGLD on winner)
 - [ ] Guild system + Guild vs Guild tournaments
 - [ ] Mobile PWA / xPortal deeplink optimization
 - [ ] Multi-chain bridge (Solana ↔ MultiversX NFT ships)
+
+---
+
+## 📚 Documentation
+
+| Document | Description |
+|---|---|
+| [`CHANGELOG.md`](CHANGELOG.md) | Full version history |
+| [`docs/MAINNET_AUDIT_CHECKLIST.md`](docs/MAINNET_AUDIT_CHECKLIST.md) | 48-point pre-mainnet security checklist |
+| [`docs/TOKENOMICS.md`](docs/TOKENOMICS.md) | EGLD flow, fee structure, APR sustainability |
+| [`docs/LAUNCH_ANNOUNCEMENT.md`](docs/LAUNCH_ANNOUNCEMENT.md) | Twitter/Discord/Forum launch templates |
+| [`contracts/battleship/GAS_OPTIMIZATION.md`](contracts/battleship/GAS_OPTIMIZATION.md) | Gas optimization details for `attack()` |
 
 ---
 
