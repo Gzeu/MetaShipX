@@ -3,8 +3,24 @@ import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import * as bodyParser from 'body-parser';
 import * as session from 'express-session';
+import * as Sentry from '@sentry/nestjs';
 
 async function bootstrap() {
+  // ✅ #40 Sentry: init BEFORE app creation so all exceptions are captured
+  const sentryDsn = process.env.SENTRY_DSN;
+  if (process.env.NODE_ENV === 'production' && !sentryDsn) {
+    throw new Error('FATAL: SENTRY_DSN must be set in production');
+  }
+  if (sentryDsn) {
+    Sentry.init({
+      dsn: sentryDsn,
+      environment: process.env.NODE_ENV ?? 'development',
+      release: process.env.npm_package_version,
+      tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+      integrations: [Sentry.nestIntegration()],
+    });
+  }
+
   const app = await NestFactory.create(AppModule);
   const logger = new Logger('Bootstrap');
 
@@ -62,6 +78,12 @@ async function bootstrap() {
   });
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+
+  // ✅ #40 Sentry: exception filter captures all unhandled errors
+  if (sentryDsn) {
+    const { SentryFilter } = await import('@sentry/nestjs');
+    app.useGlobalFilters(new (SentryFilter as any)());
+  }
 
   const port = process.env.PORT || 4000;
   await app.listen(port);

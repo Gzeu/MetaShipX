@@ -1,6 +1,6 @@
 # MetaShipX — Mainnet Audit Checklist
 
-Status as of v0.8.0. All items must be ✅ before mainnet deploy.
+Status as of v0.9.0. All items must be ✅ before mainnet deploy.
 
 ## Smart Contracts — Security
 
@@ -15,11 +15,11 @@ Status as of v0.8.0. All items must be ✅ before mainnet deploy.
 | 7 | NFT: max level 10 hard cap | ✅ Done | v0.8.0 |
 | 8 | NFT: registerCollection once-guard | ✅ Done | v0.8.0 |
 | 9 | NFT: burnShip validates caller == owner | ✅ Done | v0.8.0 |
-| 10 | Battleship: wager=0 guard in createGame | ✅ Documented | v0.8.0 |
-| 11 | Battleship: attack OOB (row/col > 9) guard | ✅ Documented | v0.8.0 |
+| 10 | Battleship: wager=0 guard in createGame | ✅ Done | v0.8.0 |
+| 11 | Battleship: attack OOB (row/col > 9) guard | ✅ Done | v0.8.0 |
 | 12 | Tournament: reportMatchResult caller == battleship | ✅ Done | v0.4.0 |
 | 13 | All contracts: no private keys / mnemonics in storage | ✅ N/A | by design |
-| 14 | External audit (Arda Security or equivalent) | ⏳ Pending | v0.9.0 |
+| 14 | External audit (Arda Security or equivalent) | ⏳ Pending | v1.0.0 — brief ready: docs/AUDIT_BRIEF.md |
 
 ## Backend — Security
 
@@ -34,7 +34,7 @@ Status as of v0.8.0. All items must be ✅ before mainnet deploy.
 | 21 | Docker: non-root user (node) | ✅ Done | v0.8.0 |
 | 22 | Docker: cap_drop ALL + no-new-privileges | ✅ Done | v0.8.0 |
 | 23 | Docker: health checks on all services | ✅ Done | v0.8.0 |
-| 24 | PostgreSQL SSL in production (sslmode=require) | ⏳ Pending | add to DATABASE_URL |
+| 24 | PostgreSQL SSL in production (sslmode=require) | ⏳ Pending | add ?sslmode=require to DATABASE_URL |
 | 25 | ThrottlerModule active (3 req/s global) | ✅ Done | v0.5.0 |
 | 26 | Rate limit: 1 attack/2s per player | ✅ Done | v0.5.0 |
 
@@ -52,7 +52,7 @@ Status as of v0.8.0. All items must be ✅ before mainnet deploy.
 | # | Item | Status | Fixed in |
 |---|------|--------|----------|
 | 31 | .env*.local in .gitignore | ✅ Done | v0.1.0 |
-| 32 | No secrets in git history | ⏳ Verify | run: git log --all -p \| grep -i mnemonic |
+| 32 | No secrets in git history | ⏳ Verify locally | run: git log --all -p \| grep -iE "mnemonic\|private_key\|PEM\|SECRET=" |
 | 33 | CI: contract build on every push to contracts/ | ✅ Done | v0.5.0 |
 | 34 | CI: E2E tests on frontend/backend changes | ✅ Done | v0.5.0 |
 | 35 | Devnet smoke test script | ✅ Done | v0.8.0 |
@@ -60,8 +60,8 @@ Status as of v0.8.0. All items must be ✅ before mainnet deploy.
 | 37 | Deployed addresses persisted to JSON | ✅ Done | v0.5.0 |
 | 38 | Reward pool >= 50 EGLD before launch | ⏳ Pending | at deploy time |
 | 39 | Uptime monitoring (Uptime Kuma / Grafana) | ⏳ Pending | pre-launch |
-| 40 | Sentry error tracking frontend + backend | ⏳ Pending | v0.9.0 |
-| 41 | Branch protection on main | ⏳ Pending | GitHub Settings |
+| 40 | Sentry error tracking frontend + backend | ✅ Done | v0.9.0 |
+| 41 | Branch protection on main | ⏳ Set manually | GitHub → Settings → Branches → Add ruleset: require PR + status checks |
 
 ## Testing
 
@@ -78,7 +78,7 @@ Status as of v0.8.0. All items must be ✅ before mainnet deploy.
 ## Pre-Mainnet Final Steps
 
 ```bash
-# 1. Verify no secrets in history
+# 1. Verify no secrets in history (LOCAL — never push output)
 git log --all -p | grep -iE "mnemonic|private_key|PEM|secret" | grep -v SESSION_SECRET
 
 # 2. Deploy to devnet
@@ -97,10 +97,10 @@ npx playwright test
 # 6. Deploy to testnet
 ./scripts/mainnet-deploy.sh CHAIN=testnet
 
-# 7. External audit (Arda Security)
-# Submit: contracts/battleship, contracts/staking, contracts/marketplace
+# 7. External audit — submit docs/AUDIT_BRIEF.md to Arda Security
+# Contact: https://ardasecurity.io or equivalent MultiversX-familiar firm
 
-# 8. Mainnet deploy (after audit)
+# 8. Mainnet deploy (after audit clearance)
 ./scripts/mainnet-deploy.sh CHAIN=mainnet
 # Requires typing: deploy mainnet
 ```
