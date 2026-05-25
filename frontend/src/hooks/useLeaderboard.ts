@@ -1,42 +1,45 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '../services/api';
-import type { LeaderboardEntry } from '../types';
 
-interface UseLeaderboardReturn {
-  entries: LeaderboardEntry[];
-  loading: boolean;
-  error: string | null;
-  refresh: () => void;
-  lastUpdated: Date | null;
+export interface LeaderEntry {
+  address: string;
+  wins: number;
+  egldWon: string;
+  rank: number;
 }
 
-const REFRESH_INTERVAL_MS = 30_000;
+const API_BASE = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3000';
+const CACHE_TTL = 60_000; // 1 minute
 
-export function useLeaderboard(limit = 50): UseLeaderboardReturn {
-  const [entries, setEntries]         = useState<LeaderboardEntry[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+let _cache: LeaderEntry[] = [];
+let _cacheTs = 0;
 
-  const fetch = useCallback(async () => {
+export function useLeaderboard(limit = 50) {
+  const [entries, setEntries] = useState<LeaderEntry[]>(_cache);
+  const [loading, setLoading] = useState(_cache.length === 0);
+  const [error, setError]     = useState<string | null>(null);
+
+  const fetch = useCallback(async (force = false) => {
+    if (!force && _cache.length > 0 && Date.now() - _cacheTs < CACHE_TTL) {
+      setEntries(_cache);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const data = await api.get<LeaderboardEntry[]>(`/api/leaderboard?limit=${limit}`);
-      setEntries(data);
-      setLastUpdated(new Date());
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to fetch leaderboard');
+      const res = await window.fetch(`${API_BASE}/leaderboard/top?limit=${limit}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      _cache = json.data ?? [];
+      _cacheTs = Date.now();
+      setEntries(_cache);
+    } catch (e: any) {
+      setError(e.message ?? 'Failed to load leaderboard');
     } finally {
       setLoading(false);
     }
   }, [limit]);
 
-  useEffect(() => {
-    void fetch();
-    const id = setInterval(() => void fetch(), REFRESH_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetch]);
+  useEffect(() => { fetch(); }, [fetch]);
 
-  return { entries, loading, error, refresh: fetch, lastUpdated };
+  return { entries, loading, error, refetch: () => fetch(true) };
 }
