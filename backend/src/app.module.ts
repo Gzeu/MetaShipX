@@ -2,10 +2,13 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
 import { WebhookModule } from './webhook/webhook.module';
 import { EventsModule } from './events/events.module';
 import { GameModule } from './game/game.module';
+import { LeaderboardModule } from './leaderboard/leaderboard.module';
+import { HealthModule } from './health/health.module';
 import { GameEvent } from './webhook/game-event.entity';
 
 @Module({
@@ -16,7 +19,10 @@ import { GameEvent } from './webhook/game-event.entity';
       envFilePath: ['.env.local', '.env'],
     }),
 
-    // ── Rate Limiting: 3 req/s per IP globally (attack endpoint adds own guard) ──
+    // ── Scheduler (LeaderboardService @Cron every 10 min) ────────────────────
+    ScheduleModule.forRoot(),
+
+    // ── Rate Limiting: 3 req/s per IP globally ───────────────────────────────
     ThrottlerModule.forRoot([{
       name: 'global',
       ttl: 1000,
@@ -41,9 +47,11 @@ import { GameEvent } from './webhook/game-event.entity';
     EventsModule,
     WebhookModule,
     GameModule,
+    LeaderboardModule,   // GET /leaderboard/top + /leaderboard/rank/:address + @Cron cache refresh
+    HealthModule,        // GET /health — Uptime Kuma + Docker healthcheck compatible
   ],
   providers: [
-    // Apply ThrottlerGuard globally — individual controllers can override with @SkipThrottle
+    // Apply ThrottlerGuard globally
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })

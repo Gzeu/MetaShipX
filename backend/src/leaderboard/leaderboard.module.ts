@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
-import { LeaderboardController } from './leaderboard.controller';
+import { HttpModule } from '@nestjs/axios';
 import { LeaderboardService } from './leaderboard.service';
+import { LeaderboardController } from './leaderboard.controller';
 
 @Module({
-  imports: [ScheduleModule.forRoot()],
-  controllers: [LeaderboardController],
+  imports: [HttpModule],
   providers: [LeaderboardService],
+  controllers: [LeaderboardController],
   exports: [LeaderboardService],
 })
 export class LeaderboardModule {}
